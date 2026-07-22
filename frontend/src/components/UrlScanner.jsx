@@ -178,7 +178,7 @@ export default function UrlScanner({ onScanComplete }) {
                 type="button"
                 onClick={() => setUrlInput("https://www.paypal.com")}
                 style={{ 
-                  background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', 
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', 
                   cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 700,
                   padding: '4px 10px', borderRadius: 'var(--radius-sm)'
                 }}
@@ -189,7 +189,7 @@ export default function UrlScanner({ onScanComplete }) {
                 type="button"
                 onClick={() => setUrlInput("http://paypa1-security-verification.xyz/signin")}
                 style={{ 
-                  background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', 
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', 
                   cursor: 'pointer', color: '#EF4444', fontSize: 11, fontWeight: 700,
                   padding: '4px 10px', borderRadius: 'var(--radius-sm)'
                 }}
@@ -200,7 +200,7 @@ export default function UrlScanner({ onScanComplete }) {
                 type="button"
                 onClick={() => setUrlInput("http://netflix-billing-failed.club")}
                 style={{ 
-                  background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', 
+                  background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', 
                   cursor: 'pointer', color: '#EF4444', fontSize: 11, fontWeight: 700,
                   padding: '4px 10px', borderRadius: 'var(--radius-sm)'
                 }}
@@ -226,14 +226,14 @@ export default function UrlScanner({ onScanComplete }) {
                 boxShadow: '0 12px 30px rgba(0,0,0,0.5)'
               }}>
                 {/* Header browser circles */}
-                <div style={{ background: '#090a0f', padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: 6 }}>
+                <div style={{ background: 'var(--bg-primary)', padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: 6 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444', display: 'inline-block' }}></span>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#FBBF24', display: 'inline-block' }}></span>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3EB649', display: 'inline-block' }}></span>
                 </div>
                 
                 {/* Address Bar */}
-                <div style={{ padding: 16, background: '#0b0c10', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ padding: 16, background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: 12 }}>
                   {result.details.has_https ? (
                     <div style={{ 
                       display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', 
@@ -254,7 +254,7 @@ export default function UrlScanner({ onScanComplete }) {
                   )}
 
                   <div className="mono-display" style={{ 
-                    flex: 1, background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-subtle)', 
+                    flex: 1, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', 
                     borderRadius: 'var(--radius-sm)', padding: '8px 12px', fontSize: 13 
                   }}>
                     <span style={{ color: 'var(--text-muted)' }}>{result.details.protocol}://</span>
@@ -266,7 +266,7 @@ export default function UrlScanner({ onScanComplete }) {
                 </div>
 
                 {/* Threat details grid */}
-                <div style={{ padding: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, background: '#0a0b0e' }}>
+                <div style={{ padding: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, background: 'var(--bg-primary)' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <span className="form-label" style={{ fontSize: 10 }}>Host Credentials</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
@@ -317,7 +317,7 @@ export default function UrlScanner({ onScanComplete }) {
                 {/* Custom SVG dial */}
                 <div style={{ position: 'relative', width: 150, height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }} viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="42" fill="transparent" stroke="rgba(255,255,255,0.02)" strokeWidth="6" />
+                    <circle cx="50" cy="50" r="42" fill="transparent" stroke="var(--border-subtle)" strokeWidth="6" />
                     <circle 
                       cx="50" 
                       cy="50" 
@@ -355,7 +355,7 @@ export default function UrlScanner({ onScanComplete }) {
                     {result.threat_indicators.map((ind, idx) => (
                       <div key={idx} style={{ 
                         padding: 16, 
-                        background: 'rgba(255,255,255,0.01)', 
+                        background: 'var(--bg-secondary)', 
                         border: '1px solid var(--border-subtle)', 
                         borderRadius: 'var(--radius-sm)'
                       }}>
@@ -425,7 +425,7 @@ export default function UrlScanner({ onScanComplete }) {
             <div className="glass-card" style={{ padding: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 340, textAlign: 'center', gap: 16 }}>
               <div style={{ 
                 width: 56, height: 56, borderRadius: '50%',
-                background: 'rgba(255,255,255,0.02)',
+                background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-subtle)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: 'var(--text-muted)',

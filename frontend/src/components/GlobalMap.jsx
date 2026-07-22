@@ -169,8 +169,8 @@ export default function GlobalMap({ height = 400 }) {
           <ellipse cx={VW/2} cy={VH/2} rx={VH/6} ry={VH/2.1} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
           <ellipse cx={VW/2} cy={VH/2} rx={VH/12} ry={VH/2.1} fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" />
           
-          <line x1={VW/2 - VH/2.1} y1={VH/2} x2={VW/2 + VH/2.1} y2={VH/2} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-          <line x1={VW/2} y1={VH/2 - VH/2.1} x2={VW/2} y2={VH/2 + VH/2.1} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+          <line x1={VW/2 - VH/2.1} y1={VH/2} x2={VW/2 + VH/2.1} y2={VH/2} stroke="var(--border-subtle)" strokeWidth="1" />
+          <line x1={VW/2} y1={VH/2 - VH/2.1} x2={VW/2} y2={VH/2 + VH/2.1} stroke="var(--border-subtle)" strokeWidth="1" />
 
           {/* Adjusted Continents for Sphere Projection - We scale them slightly to fit the globe */}
           <g transform="translate(140, 25) scale(0.72)">

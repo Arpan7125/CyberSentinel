@@ -165,7 +165,7 @@ export default function LoginPage({ onSwitch, onSuccess }) {
               {/* User vs Admin Role Toggle */}
               <div style={{
                 display: 'flex',
-                background: 'rgba(255,255,255,0.02)',
+                background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-sm)',
                 padding: 4,
@@ -525,7 +525,7 @@ export default function LoginPage({ onSwitch, onSuccess }) {
           <div style={{
             marginTop: 24,
             padding: 16,
-            background: 'rgba(255, 255, 255, 0.02)',
+            background: 'var(--bg-secondary)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-sm)',
             fontSize: 12.5,

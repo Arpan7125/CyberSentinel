@@ -59,7 +59,7 @@ export default function SubscribeModal({ onClose }) {
 
             <div style={{
               padding: '16px 20px',
-              background: 'rgba(255, 255, 255, 0.01)',
+              background: 'var(--bg-secondary)',
               border: '1px solid var(--border-subtle)',
               borderRadius: 'var(--radius-sm)', 
               marginBottom: 28,
@@ -95,7 +95,7 @@ export default function SubscribeModal({ onClose }) {
             <div style={{ textAlign: 'center', marginBottom: 32 }}>
               <div style={{
                 width: 52, height: 52, borderRadius: '50%',
-                background: 'rgba(255,255,255,0.02)',
+                background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-subtle)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 20, margin: '0 auto 16px',
@@ -145,7 +145,7 @@ export default function SubscribeModal({ onClose }) {
 
               <div style={{
                 padding: '12px 14px',
-                background: 'rgba(255, 255, 255, 0.01)',
+                background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-sm)', 
                 fontSize: 11,

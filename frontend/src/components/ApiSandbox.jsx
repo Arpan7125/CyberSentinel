@@ -211,7 +211,7 @@ export default function ApiSandbox() {
               </span>
               
               <div style={{ 
-                display: 'flex', background: 'rgba(255,255,255,0.02)', 
+                display: 'flex', background: 'var(--bg-secondary)', 
                 border: '1px solid var(--border-subtle)', padding: 2, borderRadius: 'var(--radius-sm)'
               }}>
                 {['curl', 'js', 'python'].map((lang) => (
@@ -248,7 +248,7 @@ export default function ApiSandbox() {
               <button
                 onClick={handleCopyCode}
                 style={{
-                  position: 'absolute', top: 12, right: 12, background: '#0a0b0f', 
+                  position: 'absolute', top: 12, right: 12, background: 'var(--bg-primary)', 
                   border: '1px solid var(--border-subtle)', cursor: 'pointer',
                   padding: 6, borderRadius: '4px', color: 'var(--text-muted)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center'

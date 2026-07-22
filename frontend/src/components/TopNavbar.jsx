@@ -97,10 +97,8 @@ export default function TopNavbar({ activeTab, setActiveTab, onSubscribe, onShow
 
       {/* Main Nav */}
       <div style={{ 
-        background: 'var(--bg-glass)', 
-        backdropFilter: 'blur(10px)',
+        background: 'var(--bg-secondary)', 
         borderBottom: '1px solid var(--border-subtle)', 
-        boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
         transition: 'all 0.3s'
       }}>
         <div className="top-navbar-inner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 76 }}>
@@ -149,10 +147,29 @@ export default function TopNavbar({ activeTab, setActiveTab, onSubscribe, onShow
       <style>{`
         .mini-nav-link {
           cursor: pointer;
-          transition: color 0.2s;
+          transition: color 0.15s;
         }
-        .mini-nav-link:hover {
-          color: #007AFF !important;
+        .mini-nav-link:hover { color: var(--text-primary); }
+        .nav-link {
+          padding: 8px 16px;
+          border-radius: 24px;
+          font-size: 14px;
+          font-weight: 500;
+          color: var(--text-secondary);
+          text-decoration: none;
+          cursor: pointer;
+          transition: background 0.15s, color 0.15s;
+          border: none;
+          background: none;
+        }
+        .nav-link:hover {
+          color: var(--text-primary);
+          background: var(--bg-hover);
+        }
+        .nav-link.active {
+          color: var(--accent);
+          background: var(--accent-muted);
+          font-weight: 600;
         }
       `}</style>
     </header>

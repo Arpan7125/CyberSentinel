@@ -113,7 +113,7 @@ export default function RegisterPage({ onSwitch, onSuccess }) {
           {/* User vs Admin Role Toggle */}
           <div style={{
             display: 'flex',
-            background: 'rgba(255,255,255,0.02)',
+            background: 'var(--bg-secondary)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-sm)',
             padding: 4,

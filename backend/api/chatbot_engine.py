@@ -78,9 +78,9 @@ INTENTS = [
     },
     {
         "name": "navigate_settings",
-        "patterns": [r"\bconnect.*gmail\b", r"\bconnect.*sms\b", r"\bsync.*gmail\b", r"\bsync.*sms\b", r"\bhow.*connect\b", r"\bsettings\b"],
+        "patterns": [r"\bconnect.*gmail\b", r"\bconnect.*sms\b", r"\bconnect.*outlook\b", r"\bsync.*gmail\b", r"\bsync.*sms\b", r"\bhow.*connect\b", r"\bsettings\b", r"\bintegrations\b"],
         "responses": [
-            "You can connect your integrations like Gmail and SMS in the Settings panel. Let me take you there!"
+            "You can securely connect services like Gmail, Outlook, and Microsoft 365 in the Connected Accounts Center. I'll take you there now!"
         ]
     },
     {

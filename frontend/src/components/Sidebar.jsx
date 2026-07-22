@@ -47,7 +47,7 @@ export default function Sidebar({ activeTab, setActiveTab, onSubscribe, onShowAd
         <div style={{ 
           padding: '20px 24px', 
           borderBottom: '1px solid var(--border-subtle)',
-          background: 'rgba(255,255,255,0.01)'
+          background: 'var(--bg-secondary)'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{

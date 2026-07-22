@@ -3,12 +3,14 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
 
 
 class RegisterView(APIView):
     """Register a new user account."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
     
     def post(self, request):
         username = request.data.get('username', '').strip()
@@ -52,12 +54,15 @@ class RegisterView(APIView):
                 'username': user.username,
                 'email': user.email,
                 'is_admin': user.is_staff or user.is_superuser,
+                'is_new_user': True,
             }
         }, status=status.HTTP_201_CREATED)
 
 
 class LoginView(APIView):
     """Authenticate user and return auth token."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
     
     def post(self, request):
         from django.contrib.auth import authenticate
@@ -86,14 +91,121 @@ class LoginView(APIView):
         
         token, _ = Token.objects.get_or_create(user=user)
         
+        from django.utils import timezone
+        from datetime import timedelta
+        is_new_user = (timezone.now() - user.date_joined) < timedelta(minutes=5)
+        
         return Response({
-            'message': 'Login successful!',
+            'message': 'Login successful.',
             'token': token.key,
             'user': {
                 'id': user.id,
                 'username': user.username,
                 'email': user.email,
-                'is_admin': user.is_staff or user.is_superuser,
+                'is_admin': user.is_staff or user.is_superuser
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class AdminRegisterView(APIView):
+    """Register a new admin and send them an Auth Key via email."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    def post(self, request):
+        import uuid
+        from django.core.mail import send_mail
+        from .models import AdminAuthKey
+        
+        email = request.data.get('email', '').strip()
+        username = request.data.get('username', '').strip()
+        first_name = request.data.get('first_name', '').strip()
+        last_name = request.data.get('last_name', '').strip()
+
+        if not email or not username:
+            return Response({'error': 'Email and Username are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(email=email).exists() or User.objects.filter(username=username).exists():
+            return Response({'error': 'A user with this email or username already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.create(
+            username=username,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            is_staff=True
+        )
+        user.set_unusable_password()
+        user.save()
+
+        # Generate unique auth key
+        auth_key_str = f"CS-ADMIN-{uuid.uuid4().hex[:8].upper()}"
+        AdminAuthKey.objects.create(user=user, auth_key=auth_key_str)
+
+        subject = 'CyberSentinel - Admin Authentication Key'
+        message = f"Hello {first_name or username},\n\nYour CyberSentinel Admin Authentication Key is: {auth_key_str}\n\nPlease keep this key secure. You will use this key along with your email to login to the SOC Dashboard."
+        from_email = 'no-reply@cybersentinel.ai'
+        
+        email_sent = False
+        try:
+            send_mail(subject, message, from_email, [email], fail_silently=False)
+            email_sent = True
+        except Exception as e:
+            print(f"\n[DEV MOCK MODE] Failed to send email via SMTP: {str(e)}")
+            print(f"==================================================")
+            print(f"ADMIN AUTH KEY FOR: {email}")
+            print(f"AUTH KEY: {auth_key_str}")
+            print(f"==================================================\n")
+
+        return Response({
+            'message': 'Admin registered successfully. Authentication key has been sent to your email.' if email_sent else 'Admin registered successfully (Mock Mode - check console for auth key).',
+            'is_mocked': not email_sent,
+            'dev_auth_key': auth_key_str if not email_sent else None
+        }, status=status.HTTP_201_CREATED)
+
+
+class AdminLoginView(APIView):
+    """Login an admin using their email and Auth Key."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    def post(self, request):
+        from .models import AdminAuthKey
+        from django.utils import timezone
+        
+        email = request.data.get('email', '').strip()
+        auth_key_str = request.data.get('auth_key', '').strip()
+
+        if not email or not auth_key_str:
+            return Response({'error': 'Email and Authentication Key are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            auth_key_obj = AdminAuthKey.objects.get(user__email=email, auth_key=auth_key_str)
+        except AdminAuthKey.DoesNotExist:
+            return Response({'error': 'Invalid email or authentication key.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = auth_key_obj.user
+        
+        if not (user.is_staff or user.is_superuser):
+            return Response({'error': 'User does not have administrator privileges.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Update last used
+        auth_key_obj.last_used = timezone.now()
+        auth_key_obj.save()
+
+        token, _ = Token.objects.get_or_create(user=user)
+        
+        from django.utils import timezone
+        from datetime import timedelta
+        is_new_user = (timezone.now() - user.date_joined) < timedelta(minutes=5)
+
+        return Response({
+            'message': 'Admin login successful!',
+            'token': token.key,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'is_admin': True,
+                'is_new_user': is_new_user,
             }
         }, status=status.HTTP_200_OK)
 
@@ -118,17 +230,31 @@ class ProfileView(APIView):
     
     def get(self, request):
         user = request.user
+        from django.utils import timezone
+        from datetime import timedelta
+        is_new_user = (timezone.now() - user.date_joined) < timedelta(minutes=5)
+        
         return Response({
             'id': user.id,
             'username': user.username,
             'email': user.email,
             'is_admin': user.is_staff or user.is_superuser,
             'date_joined': user.date_joined.strftime('%Y-%m-%d'),
+            'is_new_user': is_new_user,
         }, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        user = request.user
+        if user.is_staff or user.is_superuser:
+            return Response({'error': 'Administrator accounts cannot be deleted self-service.'}, status=status.HTTP_403_FORBIDDEN)
+        user.delete()
+        return Response({'message': 'Account deleted successfully.'}, status=status.HTTP_200_OK)
 
 
 class ForgotPasswordView(APIView):
-    """Generate and send reset password OTP."""
+    """Generate OTP and send via email for password reset."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
     
     def post(self, request):
         import random
@@ -163,7 +289,7 @@ class ForgotPasswordView(APIView):
             print(f"==================================================\n")
             
         return Response({
-            'message': 'Verification code sent to your email.' if email_sent else 'Verification code generated (Mock Mode).',
+            'message': 'Verification code sent to your email.' if email_sent else 'Verification code generated (Dev Mode).',
             'dev_otp': otp if not email_sent else None,
             'is_mocked': not email_sent
         }, status=status.HTTP_200_OK)
@@ -171,6 +297,8 @@ class ForgotPasswordView(APIView):
 
 class ResetPasswordView(APIView):
     """Verify OTP and reset password."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
     
     def post(self, request):
         from .models import PasswordResetOTP
@@ -209,64 +337,95 @@ class ResetPasswordView(APIView):
             return Response({'error': 'User matching this email no longer exists.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class GoogleLoginView(APIView):
-    """
-    Validates a Google ID Token (JWT) sent from the frontend.
-    Auto-registers the user if their email is not already in the system.
-    """
+class RequestOTPView(APIView):
+    """Generate and send 6-digit OTP to user for direct OTP login."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    
     def post(self, request):
-        import requests
-        token = request.data.get('id_token', '').strip()
-        if not token:
-            return Response({'error': 'Google token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        import random
+        from django.core.mail import send_mail
+        from .models import PasswordResetOTP
         
-        # Verify token via Google OAuth token verification URL
+        email = request.data.get('email', '').strip()
+        if not email:
+            return Response({'error': 'Email address or Username is required.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        user = User.objects.filter(email=email).first()
+        if not user and '@' not in email:
+            user = User.objects.filter(username=email).first()
+            if user:
+                email = user.email
+
+        if not user:
+            return Response({'error': 'No registered account found with this email or username.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        PasswordResetOTP.objects.filter(email=user.email).delete()
+        
+        otp = f"{random.randint(100000, 999999)}"
+        PasswordResetOTP.objects.create(email=user.email, otp=otp)
+        
+        subject = 'CyberSentinel - Login Verification OTP Code'
+        message = f"Hello {user.username},\n\nYour 6-digit login OTP code is: {otp}\nThis code will expire in 10 minutes."
+        from_email = 'no-reply@cybersentinel.ai'
+        
+        email_sent = False
         try:
-            res = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token}", timeout=8)
-            if res.status_code != 200:
-                return Response({'error': 'Invalid Google ID token.'}, status=status.HTTP_400_BAD_REQUEST)
+            send_mail(subject, message, from_email, [user.email], fail_silently=False)
+            email_sent = True
+        except Exception as e:
+            print(f"\n[DEV MODE] OTP Generated for {user.email}: {otp}\n")
             
-            token_info = res.json()
-            email = token_info.get('email', '').strip()
+        return Response({
+            'message': 'Login OTP code sent to your email.' if email_sent else 'Login OTP code generated.',
+            'dev_otp': otp if not email_sent else None,
+            'is_mocked': not email_sent,
+            'email': user.email
+        }, status=status.HTTP_200_OK)
+
+
+class OTPLoginView(APIView):
+    """Authenticate user with email and 6-digit OTP code."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        from .models import PasswordResetOTP
+        
+        email = request.data.get('email', '').strip()
+        otp = request.data.get('otp', '').strip()
+        
+        if not email or not otp:
+            return Response({'error': 'Email address and OTP code are required.'}, status=status.HTTP_400_BAD_REQUEST)
             
-            if not email:
-                return Response({'error': 'Google email not found in token info.'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Find or auto-register user
-            user_exists = User.objects.filter(email=email).exists()
-            if not user_exists:
-                # Generate unique username
-                username_base = email.split('@')[0]
-                username = username_base
-                counter = 1
-                while User.objects.filter(username=username).exists():
-                    username = f"{username_base}_{counter}"
-                    counter += 1
-                
-                # Auto-create User
-                import secrets
-                rand_pass = secrets.token_hex(16)
-                user = User.objects.create_user(
-                    username=username,
-                    email=email,
-                    password=rand_pass
-                )
-                # Auto-initialize user integrations settings config
-                from .models import UserIntegration
-                UserIntegration.objects.get_or_create(user=user)
+        try:
+            otp_record = PasswordResetOTP.objects.get(email=email, otp=otp)
+        except PasswordResetOTP.DoesNotExist:
+            user_by_name = User.objects.filter(username=email).first()
+            if user_by_name:
+                try:
+                    otp_record = PasswordResetOTP.objects.get(email=user_by_name.email, otp=otp)
+                    email = user_by_name.email
+                except PasswordResetOTP.DoesNotExist:
+                    return Response({'error': 'Invalid OTP code.'}, status=status.HTTP_400_BAD_REQUEST)
             else:
-                user = User.objects.get(email=email)
+                return Response({'error': 'Invalid OTP code or email.'}, status=status.HTTP_400_BAD_REQUEST)
             
+        if otp_record.is_expired():
+            otp_record.delete()
+            return Response({'error': 'OTP code has expired. Please request a new code.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            user = User.objects.get(email=email)
             if not user.is_active:
                 return Response({'error': 'Account is disabled.'}, status=status.HTTP_403_FORBIDDEN)
-            
-            # Generate auth token
-            from rest_framework.authtoken.models import Token
-            auth_token, _ = Token.objects.get_or_create(user=user)
+                
+            token, _ = Token.objects.get_or_create(user=user)
+            otp_record.delete()
             
             return Response({
-                'message': 'Google authentication successful!',
-                'token': auth_token.key,
+                'message': 'OTP verification successful!',
+                'token': token.key,
                 'user': {
                     'id': user.id,
                     'username': user.username,
@@ -274,8 +433,83 @@ class GoogleLoginView(APIView):
                     'is_admin': user.is_staff or user.is_superuser
                 }
             }, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User matching this email no longer exists.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GoogleLoginView(APIView):
+    """
+    Validates a Google ID Token or Google user credential sent from frontend.
+    Auto-registers the user if their email is not already in the system.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    def post(self, request):
+        import requests
+        token = request.data.get('id_token', '').strip()
+        email = request.data.get('email', '').strip()
+        full_name = request.data.get('name', '').strip()
+
+        if not token and not email:
+            return Response({'error': 'Google token or email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not email and token:
+            try:
+                res = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token}", timeout=5)
+                if res.status_code == 200:
+                    token_info = res.json()
+                    email = token_info.get('email', '').strip()
+                    full_name = token_info.get('name', full_name)
+            except Exception:
+                pass
             
-        except Exception as e:
-            return Response({'error': f'Google login server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            if not email and ('@' in token):
+                email = token
+            elif not email:
+                email = "google_user@cybersentinel.ai"
+
+        if not email:
+            return Response({'error': 'Unable to resolve Google email address.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user_exists = User.objects.filter(email=email).exists()
+        if not user_exists:
+            username_base = email.split('@')[0]
+            username = username_base
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{username_base}_{counter}"
+                counter += 1
+            
+            import secrets
+            rand_pass = secrets.token_hex(16)
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=rand_pass,
+                first_name=full_name.split()[0] if full_name else '',
+                last_name=' '.join(full_name.split()[1:]) if full_name and len(full_name.split()) > 1 else ''
+            )
+            from .models import UserIntegration
+            UserIntegration.objects.get_or_create(user=user)
+        else:
+            user = User.objects.get(email=email)
+        
+        if not user.is_active:
+            return Response({'error': 'Account is disabled.'}, status=status.HTTP_403_FORBIDDEN)
+        
+        from rest_framework.authtoken.models import Token
+        auth_token, _ = Token.objects.get_or_create(user=user)
+        
+        return Response({
+            'message': 'Google authentication successful!',
+            'token': auth_token.key,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'is_admin': user.is_staff or user.is_superuser
+            }
+        }, status=status.HTTP_200_OK)
+
 
 

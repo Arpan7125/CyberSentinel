@@ -114,3 +114,108 @@ class AdminUserActionView(APIView):
             return Response({'message': 'User deleted successfully.'})
         
         return Response({'error': 'Invalid action.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminIntegrationsView(APIView):
+    """Admin: View ecosystem stats, manage providers, view user connections."""
+
+    def get(self, request):
+        admin_user = get_admin_user(request)
+        if not admin_user:
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        from .models import OAuthProvider, ConnectedAccount, IntegrationSyncLog
+        from django.db.models import Q
+
+        providers = list(OAuthProvider.objects.all().values(
+            'id', 'name', 'category', 'description', 'is_active', 'client_id', 'default_scopes', 'created_at'
+        ))
+        for p in providers:
+            p['created_at'] = p['created_at'].strftime('%Y-%m-%d %H:%M')
+            # Mask client_id for display
+            cid = p.get('client_id', '')
+            p['client_id_masked'] = f"{cid[:8]}...{cid[-4:]}" if len(cid) > 12 else ('Configured' if cid else 'Not Set')
+            p['connected_users'] = ConnectedAccount.objects.filter(provider_id=p['id'], status='connected').count()
+
+        total_connections = ConnectedAccount.objects.filter(status='connected').count()
+        failed_connections = ConnectedAccount.objects.filter(status='failed').count()
+        total_syncs = IntegrationSyncLog.objects.count()
+        failed_syncs = IntegrationSyncLog.objects.filter(status='error').count()
+
+        # All user connections
+        connections = ConnectedAccount.objects.select_related('provider', 'user').all()[:100]
+        conn_data = [{
+            'id': c.id,
+            'username': c.user.username,
+            'email': c.user.email,
+            'provider_name': c.provider.name,
+            'category': c.provider.category,
+            'status': c.status,
+            'health_status': c.health_status,
+            'provider_account_email': c.provider_account_email,
+            'last_sync_at': c.last_sync_at.strftime('%Y-%m-%d %H:%M') if c.last_sync_at else None,
+            'created_at': c.created_at.strftime('%Y-%m-%d %H:%M'),
+        } for c in connections]
+
+        return Response({
+            'stats': {
+                'total_providers': len(providers),
+                'active_connections': total_connections,
+                'failed_connections': failed_connections,
+                'total_syncs': total_syncs,
+                'failed_syncs': failed_syncs,
+            },
+            'providers': providers,
+            'connections': conn_data,
+        })
+
+    def post(self, request):
+        """Create or update an OAuthProvider."""
+        admin_user = get_admin_user(request)
+        if not admin_user:
+            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        from .models import OAuthProvider
+
+        action = request.data.get('action')
+        provider_id = request.data.get('provider_id')
+
+        if action == 'toggle_provider':
+            try:
+                provider = OAuthProvider.objects.get(id=provider_id)
+                provider.is_active = not provider.is_active
+                provider.save()
+                return Response({'message': f"Provider {'enabled' if provider.is_active else 'disabled'}."})
+            except OAuthProvider.DoesNotExist:
+                return Response({'error': 'Provider not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        elif action == 'update_credentials':
+            try:
+                provider = OAuthProvider.objects.get(id=provider_id)
+                if request.data.get('client_id'):
+                    provider.client_id = request.data['client_id']
+                if request.data.get('client_secret'):
+                    provider.client_secret = request.data['client_secret']
+                if request.data.get('redirect_uri'):
+                    provider.redirect_uri = request.data['redirect_uri']
+                provider.save()
+                return Response({'message': 'Credentials updated.'})
+            except OAuthProvider.DoesNotExist:
+                return Response({'error': 'Provider not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        elif action == 'create_provider':
+            name = request.data.get('name')
+            category = request.data.get('category')
+            if not name or not category:
+                return Response({'error': 'name and category required.'}, status=status.HTTP_400_BAD_REQUEST)
+            provider = OAuthProvider.objects.create(
+                name=name,
+                category=category,
+                description=request.data.get('description', ''),
+                client_id=request.data.get('client_id', ''),
+                client_secret=request.data.get('client_secret', ''),
+                default_scopes=request.data.get('default_scopes', ''),
+            )
+            return Response({'message': f'Provider {provider.name} created.', 'id': provider.id})
+
+        return Response({'error': 'Invalid action.'}, status=status.HTTP_400_BAD_REQUEST)

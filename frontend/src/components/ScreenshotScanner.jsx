@@ -196,7 +196,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
                 style={{
                   display: 'inline-block',
                   padding: '2px 6px',
-                  background: 'rgba(255,255,255,0.03)',
+                  background: 'var(--bg-secondary)',
                   border: `1px solid ${glowCol}`,
                   borderRadius: 'var(--radius-sm)',
                   fontSize: 13,
@@ -257,7 +257,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
                 padding: '40px 20px',
                 textAlign: 'center',
                 cursor: 'pointer',
-                background: 'rgba(255,255,255,0.01)',
+                background: 'var(--bg-secondary)',
                 transition: 'all 0.3s'
               }}
               onMouseEnter={e => {
@@ -296,7 +296,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
                     type="button"
                     onClick={() => loadPreset(p.name)}
                     style={{ 
-                      background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', 
+                      background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', 
                       cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 11, fontWeight: 800,
                       padding: '8px 4px', borderRadius: 'var(--radius-sm)', textTransform: 'uppercase'
                     }}
@@ -313,7 +313,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
             {imagePreview && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ width: 44, height: 44, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: '#000' }}>
+                  <div style={{ width: 44, height: 44, border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', background: 'var(--bg-secondary)' }}>
                     <img src={imagePreview} alt="Preview" style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
                   </div>
                   <div>
@@ -357,7 +357,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
                 </span>
               </div>
               <div style={{ 
-                background: 'rgba(255,255,255,0.01)', 
+                background: 'var(--bg-secondary)', 
                 padding: 20, 
                 border: '1px solid var(--border-subtle)', 
                 borderRadius: 'var(--radius-sm)' 
@@ -379,7 +379,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
                 {/* Custom SVG dial */}
                 <div style={{ position: 'relative', width: 150, height: 150, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }} viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="42" fill="transparent" stroke="rgba(255,255,255,0.02)" strokeWidth="6" />
+                    <circle cx="50" cy="50" r="42" fill="transparent" stroke="var(--border-subtle)" strokeWidth="6" />
                     <circle 
                       cx="50" 
                       cy="50" 
@@ -417,7 +417,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
                     {result.threat_indicators.map((ind, idx) => (
                       <div key={idx} style={{ 
                         padding: 16, 
-                        background: 'rgba(255,255,255,0.01)', 
+                        background: 'var(--bg-secondary)', 
                         border: '1px solid var(--border-subtle)', 
                         borderRadius: 'var(--radius-sm)'
                       }}>
@@ -487,7 +487,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
             <div className="glass-card" style={{ padding: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 340, textAlign: 'center', gap: 16 }}>
               <div style={{ 
                 width: 56, height: 56, borderRadius: '50%',
-                background: 'rgba(255,255,255,0.02)',
+                background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-subtle)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: 'var(--text-muted)',

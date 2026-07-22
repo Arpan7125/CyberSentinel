@@ -266,7 +266,7 @@ export default function AdminPage({ onBack }) {
       {/* Tab Navigation */}
       <div style={{ 
         display: 'flex', gap: 10, padding: 4, 
-        background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-subtle)', 
+        background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', 
         borderRadius: 'var(--radius-sm)', width: 'fit-content' 
       }}>
         {tabs.map(tab => (
@@ -312,7 +312,7 @@ export default function AdminPage({ onBack }) {
                         {type} scans // {pct}% ratio
                       </div>
                       
-                      <div style={{ marginTop: 14, height: 3, background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
+                      <div style={{ marginTop: 14, height: 3, background: 'var(--bg-secondary)', overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${pct}%`, background: colors[type], transition: 'width 1s ease' }} />
                       </div>
                     </div>
@@ -354,7 +354,7 @@ export default function AdminPage({ onBack }) {
                         <td>
                           {user.is_staff
                             ? <span className="badge badge-admin">Admin Node</span>
-                            : <span className="badge" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>User Node</span>
+                            : <span className="badge" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>User Node</span>
                           }
                         </td>
                         <td>
@@ -437,7 +437,7 @@ export default function AdminPage({ onBack }) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <div style={{
                               width: 50, height: 3,
-                              background: 'rgba(255,255,255,0.03)',
+                              background: 'var(--bg-secondary)',
                             }}>
                               <div style={{
                                 height: '100%',

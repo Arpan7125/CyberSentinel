@@ -35,6 +35,8 @@ class UserIntegrationView(APIView):
             'twilio_token': config.twilio_token,
             'twilio_from': config.twilio_from,
             'twilio_to': config.twilio_to,
+            'openai_api_key': config.openai_api_key,
+            'virustotal_api_key': config.virustotal_api_key,
         }, status=status.HTTP_200_OK)
 
     def post(self, request):
@@ -47,6 +49,8 @@ class UserIntegrationView(APIView):
         config.twilio_token = request.data.get('twilio_token', '').strip()
         config.twilio_from = request.data.get('twilio_from', '').strip()
         config.twilio_to = request.data.get('twilio_to', '').strip()
+        config.openai_api_key = request.data.get('openai_api_key', '').strip()
+        config.virustotal_api_key = request.data.get('virustotal_api_key', '').strip()
         
         config.save()
         return Response({'message': 'Integrations config saved successfully.'}, status=status.HTTP_200_OK)

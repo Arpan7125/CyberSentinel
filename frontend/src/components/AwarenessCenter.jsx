@@ -157,7 +157,7 @@ export default function AwarenessCenter() {
                 <span>SCENARIO {currentIdx + 1} OF {questions.length}</span>
                 <span>{Math.round(progressPercent)}% RESOLVED</span>
               </div>
-              <div style={{ width: '100%', background: 'rgba(255,255,255,0.03)', height: 3 }}>
+              <div style={{ width: '100%', background: 'var(--bg-secondary)', height: 3 }}>
                 <div style={{ 
                   background: 'var(--accent-orange)', 
                   height: '100%', 
@@ -184,12 +184,12 @@ export default function AwarenessCenter() {
               {/* Envelope Metadata fields */}
               <div style={{ 
                 padding: 16, borderBottom: '1px solid var(--border-subtle)', 
-                display: 'flex', flexDirection: 'column', gap: 10, background: 'rgba(255,255,255,0.01)'
+                display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--bg-secondary)'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
                   <span style={{ color: 'var(--text-muted)', width: 60, textAlign: 'right', fontWeight: 800, textTransform: 'uppercase' }}>From:</span>
                   <div style={{ 
-                    padding: '4px 10px', background: 'rgba(255,255,255,0.02)', 
+                    padding: '4px 10px', background: 'var(--bg-secondary)', 
                     border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', 
                     fontFamily: 'monospace', fontSize: 11.5, borderRadius: 'var(--radius-sm)'
                   }}>
@@ -211,7 +211,7 @@ export default function AwarenessCenter() {
               </div>
 
               {/* Decision Choice Panel */}
-              <div style={{ padding: 18, background: 'rgba(255,255,255,0.01)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ padding: 18, background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
                   Cast Security Verdict:
                 </span>
@@ -254,7 +254,7 @@ export default function AwarenessCenter() {
               <div className="glass-card" style={{ padding: 48, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 340, textAlign: 'center', gap: 16 }}>
                 <div style={{ 
                   width: 56, height: 56, borderRadius: '50%',
-                  background: 'rgba(255,255,255,0.02)',
+                  background: 'var(--bg-secondary)',
                   border: '1px solid var(--border-subtle)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   color: 'var(--text-muted)',
@@ -351,7 +351,7 @@ export default function AwarenessCenter() {
         <div className="glass-card reveal-up" style={{ padding: 48, maxWidth: 640, marginInline: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, textAlign: 'center' }}>
           <div style={{ 
             width: 72, height: 72, borderRadius: '50%',
-            background: 'rgba(255,255,255,0.02)',
+            background: 'var(--bg-secondary)',
             border: '1px solid var(--border-subtle)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: 'var(--accent-orange)'
@@ -369,7 +369,7 @@ export default function AwarenessCenter() {
           {/* Stats summary rows */}
           <div style={{ 
             display: 'flex', justifyContent: 'space-around', width: '100%', maxWidth: 400,
-            background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-subtle)', 
+            background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', 
             padding: '20px 10px', borderRadius: 'var(--radius-sm)'
           }}>
             <div>
@@ -394,7 +394,7 @@ export default function AwarenessCenter() {
           {questions.length > 0 && (
             <div style={{ 
               padding: 20, border: `1px solid ${getRank(score, questions.length).border}`, 
-              borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.01)',
+              borderRadius: 'var(--radius-sm)', background: 'var(--bg-secondary)',
               width: '100%', maxWidth: 400, textAlign: 'left' 
             }}>
               <span style={{ fontSize: 9, fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 4 }}>

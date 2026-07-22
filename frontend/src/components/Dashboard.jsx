@@ -237,7 +237,7 @@ export default function Dashboard({ triggerScanRefetch }) {
             {gmailEmails.map(mail => (
               <div key={mail.id} className="slide-up-item" style={{
                 padding: 16,
-                background: 'rgba(255, 255, 255, 0.01)',
+                background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-subtle)',
                 borderRadius: 'var(--radius-sm)',
                 display: 'flex',
@@ -318,7 +318,7 @@ export default function Dashboard({ triggerScanRefetch }) {
                         {item.value} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>({pct}%)</span>
                       </span>
                     </div>
-                    <div style={{ height: 4, background: 'rgba(255,255,255,0.03)', overflow: 'hidden' }}>
+                    <div style={{ height: 4, background: 'var(--bg-secondary)', overflow: 'hidden' }}>
                       <div style={{
                         height: '100%', width: `${pct}%`,
                         background: item.color,
@@ -345,7 +345,7 @@ export default function Dashboard({ triggerScanRefetch }) {
               ].map(t => (
                 <div key={t.label} style={{
                   flex: 1, padding: '14px 10px',
-                  background: 'rgba(255, 255, 255, 0.02)',
+                  background: 'var(--bg-secondary)',
                   border: '1px solid var(--border-subtle)',
                   borderRadius: 'var(--radius-sm)',
                   textAlign: 'center',
@@ -424,7 +424,7 @@ export default function Dashboard({ triggerScanRefetch }) {
                 <div key={scan.id || i} style={{
                   display: 'flex', alignItems: 'center', gap: 12,
                   padding: '12px 16px',
-                  background: 'rgba(255,255,255,0.01)',
+                  background: 'var(--bg-secondary)',
                   border: '1px solid var(--border-subtle)',
                   borderRadius: 'var(--radius-sm)',
                   transition: 'all 0.3s',

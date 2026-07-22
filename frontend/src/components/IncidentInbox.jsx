@@ -201,7 +201,7 @@ export default function IncidentInbox() {
           {/* Channel Selector */}
           <div style={{
             display: 'flex',
-            background: 'rgba(255,255,255,0.02)',
+            background: 'var(--bg-secondary)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-sm)',
             padding: 3,
@@ -337,7 +337,7 @@ export default function IncidentInbox() {
                       </span>
                       <span style={{
                         fontSize: 9, fontWeight: 800, color: getRiskColor(log.risk_level),
-                        background: 'rgba(255,255,255,0.02)', padding: '2px 6px', borderRadius: 2
+                        background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: 2
                       }}>
                         {log.risk_level.toUpperCase()}
                       </span>
