@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../AuthContext';
 import ParticleBackground from '../../components/ui/ParticleBackground';
 import PasswordStrength, { generatePassword } from '../../components/ui/PasswordStrength';
 import { ShieldCheck, User, Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle2, Shield, Inbox } from 'lucide-react';

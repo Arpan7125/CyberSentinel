@@ -1,35 +1,58 @@
 import React, { useState } from 'react';
 import { Smartphone, Phone, ShieldAlert, AlertTriangle, CheckCircle, Globe, Flag, User, MapPin } from 'lucide-react';
+import { scanService, saasService } from '../../services/api';
+
 export default function PhoneScamPage() {
   const [phone, setPhone] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [result, setResult] = useState(null);
+  const [reportSuccess, setReportSuccess] = useState('');
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportDesc, setReportDesc] = useState('');
+  const [submittingReport, setSubmittingReport] = useState(false);
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     e.preventDefault();
     if (!phone) return;
     setIsSearching(true);
     setResult(null);
+    setReportSuccess('');
     
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const res = await scanService.analyzePhone({ phone });
+      setResult(res);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to analyze phone number. Server might be offline.');
+    } finally {
       setIsSearching(false);
-      setResult({
-        number: phone,
-        country: 'United States',
-        carrier: 'Twilio / VoIP',
-        type: 'VoIP (High Risk)',
-        reputation: 'Dangerous',
-        spamScore: 92,
-        reports: 142,
-        lastReported: '2 hours ago',
-        aiAssessment: 'This number exhibits behavior consistent with highly automated robocall campaigns and IRS imposter scams. Multiple users report aggressive demands for payment in gift cards.',
-        communityComments: [
-          { author: 'User749', text: 'Claimed to be from the IRS. Very aggressive.', date: 'Today' },
-          { author: 'Anonymous', text: 'Left a robotic voicemail about an arrest warrant.', date: 'Yesterday' }
-        ]
+    }
+  };
+
+  const handleReportNumber = async () => {
+    if (!result) return;
+    setSubmittingReport(true);
+    try {
+      await saasService.reportScam({
+        url_or_email: result.number,
+        description: reportDesc || 'Reported as spam/scam caller.'
       });
-    }, 1500);
+      setReportSuccess('Thank you! This number has been reported to the community database.');
+      setShowReportModal(false);
+      setReportDesc('');
+      // Refresh phone analysis
+      const res = await scanService.analyzePhone({ phone: result.number });
+      setResult(res);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to submit report. Please try again.');
+    } finally {
+      setSubmittingReport(false);
+    }
+  };
+
+  const handleMarkSafe = () => {
+    setReportSuccess('Marked as safe in your local session feedback.');
   };
 
   return (
@@ -117,11 +140,49 @@ export default function PhoneScamPage() {
 
             </div>
 
+            {reportSuccess && (
+              <div style={{ marginTop: 24, padding: 12, background: 'rgba(50,215,75,0.1)', border: '1px solid rgba(50,215,75,0.3)', borderRadius: 8, color: '#32D74B', fontSize: 14 }}>
+                {reportSuccess}
+              </div>
+            )}
+
             <div style={{ marginTop: 32, display: 'flex', gap: 16 }}>
-              <button className="btn-pub btn-pub-primary" style={{ background: 'var(--accent-red)' }}> Report this Number</button>
-              <button className="btn-pub btn-pub-ghost">Mark as Safe</button>
+              <button 
+                className="btn-pub btn-pub-primary" 
+                style={{ background: 'var(--accent-red)' }}
+                onClick={() => setShowReportModal(true)}
+              >
+                Report this Number
+              </button>
+              <button className="btn-pub btn-pub-ghost" onClick={handleMarkSafe}>
+                Mark as Safe
+              </button>
             </div>
             
+          </div>
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {showReportModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--bg-secondary)', padding: 32, borderRadius: 12, width: '100%', maxWidth: 500, border: '1px solid var(--border-subtle)' }}>
+            <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>Report {result?.number}</h3>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20 }}>
+              Provide details about the call (e.g. impersonating bank, asking for OTP, robocall).
+            </p>
+            <textarea
+              placeholder="Describe the scam or call behavior..."
+              value={reportDesc}
+              onChange={e => setReportDesc(e.target.value)}
+              style={{ width: '100%', height: 100, padding: 12, background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', marginBottom: 20, outline: 'none', resize: 'vertical' }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button className="btn-pub btn-pub-ghost" onClick={() => setShowReportModal(false)}>Cancel</button>
+              <button className="btn-pub btn-pub-primary" style={{ background: 'var(--accent-red)' }} onClick={handleReportNumber} disabled={submittingReport}>
+                {submittingReport ? 'Submitting...' : 'Submit Report'}
+              </button>
+            </div>
           </div>
         </div>
       )}

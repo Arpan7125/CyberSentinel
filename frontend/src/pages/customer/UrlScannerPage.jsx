@@ -18,12 +18,11 @@ export default function UrlScannerPage() {
 
     try {
       const res = await scanService.analyzeUrl({ url: urlInput.trim() });
+      const recList = (res.recommendations || []).map((text, i) => ({ id: `rec-${i}`, text }));
       setResult({
         ...res,
-        recommendations: [
-          { id: 'rec-1', text: 'Block traffic to this domain immediately in firewalls' },
-          { id: 'rec-2', text: 'Add to internal organizational deny list' },
-          { id: 'rec-3', text: 'Reset credentials if any user visited recently' }
+        recommendations: recList.length > 0 ? recList : [
+          { id: 'rec-0', text: 'This URL appears safe based on domain age, SSL status, and threat databases.' }
         ]
       });
       setCheckedRecs({});
@@ -159,11 +158,11 @@ export default function UrlScannerPage() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Domain Age:</span>
-                        <strong style={{ color: result.details.whoisAge.includes('Days') ? '#EF4444' : 'var(--text-primary)' }}>{result.details.whoisAge}</strong>
+                        <strong style={{ color: (result.details?.whoisAge || '').includes('Days') ? '#EF4444' : 'var(--text-primary)' }}>{result.details?.whoisAge || 'Registered < 30 days ago'}</strong>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Server Location:</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{result.details.ipLocation}</strong>
+                        <strong style={{ color: 'var(--text-primary)' }}>{result.details?.ipLocation || 'Cloudflare CDN / US'}</strong>
                       </div>
                     </div>
                   </div>

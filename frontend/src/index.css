@@ -500,7 +500,10 @@ img { max-width: 100%; height: auto; }
   border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column;
   position: fixed; left: 0; top: 0; bottom: 0; z-index: 100;
   transition: width 0.3s ease; overflow-y: auto; overflow-x: hidden;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
 }
+.dash-sidebar::-webkit-scrollbar { display: none; } /* Chrome, Safari, Opera */
 .dash-sidebar.collapsed { width: var(--sidebar-collapsed); }
 .dash-sidebar-header {
   padding: 20px; display: flex; align-items: center; gap: 12px;
@@ -1149,3 +1152,76 @@ img { max-width: 100%; height: auto; }
 /* ScrollReveal MD3 Animations */
 .scroll-hidden { opacity: 0; transform: translateY(40px); transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .scroll-visible { opacity: 1; transform: translateY(0); transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
+
+/* Floating Animations System */
+@keyframes floatY {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+@keyframes floatYSubtle {
+  0% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+@keyframes floatGlow {
+  0% {
+    transform: translateY(0px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08), 0 0 15px rgba(50, 215, 75, 0.1);
+  }
+  50% {
+    transform: translateY(-8px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 0 25px rgba(50, 215, 75, 0.25);
+  }
+  100% {
+    transform: translateY(0px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08), 0 0 15px rgba(50, 215, 75, 0.1);
+  }
+}
+
+@keyframes floatRotate {
+  0% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(1deg);
+  }
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+}
+
+.floating-card {
+  animation: floatY 5s ease-in-out infinite;
+}
+
+.floating-card-slow {
+  animation: floatY 7s ease-in-out infinite;
+}
+
+.floating-card-subtle {
+  animation: floatYSubtle 4s ease-in-out infinite;
+}
+
+.floating-glow {
+  animation: floatGlow 6s ease-in-out infinite;
+}
+
+.floating-rotate {
+  animation: floatRotate 6s ease-in-out infinite;
+}
+

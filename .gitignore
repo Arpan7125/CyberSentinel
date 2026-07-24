@@ -1,3 +1,11 @@
+# Environment & local data
+*.env
+*.env.local
+backend/.env
+db/
+tmp/
+*.pdf
+
 # Python
 backend/__pycache__/
 backend/*/__pycache__/

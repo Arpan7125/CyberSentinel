@@ -17,9 +17,7 @@
   font-weight: 800;
   margin-bottom: 12px;
   letter-spacing: -0.5px;
-  background: linear-gradient(135deg, #fff, #a1a1aa);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text-primary);
 }
 
 .analyzer-header p {

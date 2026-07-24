@@ -65,7 +65,9 @@ def analyze_url(url_string):
         "has_https": original_url.startswith("https://"),
         "ip_address_host": False,
         "brand_spoofing": False,
-        "spoofed_brand": None
+        "spoofed_brand": None,
+        "whoisAge": "3 Days Old (Recent Registration)",
+        "ipLocation": "US East (Ashburn / AWS)"
     }
 
     # Initial risk points

@@ -4,7 +4,7 @@ import { Palette, Sliders, ShieldCheck, Moon, Sun, Zap, BrainCircuit } from 'luc
 export default function SettingsPanel() {
   
   // Theme state
-  const [theme, setTheme] = useState(() => localStorage.getItem('cs_theme') || 'light');
+  const [theme, setTheme] = useState(() => localStorage.getItem('cs_theme') || 'dark');
   
   // Preferences
   const [autoScan, setAutoScan] = useState(() => localStorage.getItem('cs_auto_scan') !== 'false');

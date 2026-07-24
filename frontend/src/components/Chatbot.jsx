@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../LanguageContext';
 import { KNOWLEDGE_BASE } from '../data/aiKnowledgeBase';
+import { chatService } from '../services/api';
 
 export default function Chatbot() {
   const navigate = useNavigate();
@@ -79,45 +80,59 @@ export default function Chatbot() {
     setInput('');
     setTyping(true);
 
-    // Simulate AI thinking delay
-    await new Promise(r => setTimeout(r, 1200));
-
-    // Intent match matching keywords
-    let matchedIntent = null;
-    const lowerText = userText.toLowerCase();
-
-    for (const intent of KNOWLEDGE_BASE.intents) {
-      if (intent.keywords.some(kw => lowerText.includes(kw))) {
-        matchedIntent = intent;
-        break;
-      }
-    }
-
     let responseText = '';
     let responseActions = [];
 
-    // Custom flow trigger support ticket
-    if (lowerText.startsWith('create ticket') || lowerText.includes('support ticket')) {
-      responseText = lang === 'English'
-        ? "I have successfully initiated a support incident ticket on your dashboard queue."
-        : "सपोर्ट टिकट सफलतापूर्वक बना दिया गया है।";
-      responseActions = [{ label: '🎟️ View Support Tickets', type: 'navigate', path: '/dashboard/tickets' }];
-    } else if (matchedIntent) {
-      responseText = matchedIntent.responses[lang] || matchedIntent.responses.English;
-      responseActions = matchedIntent.actions;
-    } else {
-      responseText = KNOWLEDGE_BASE.defaultResponse[lang] || KNOWLEDGE_BASE.defaultResponse.English;
-      responseActions = [
-        { label: '📅 Book a Demo', type: 'navigate', path: '/contact' },
-        { label: '💳 View Pricing', type: 'navigate', path: '/pricing' }
-      ];
-    }
+    try {
+      // Send message to Django backend chatbot engine
+      const res = await chatService.send(userText, lang);
+      responseText = res.response;
 
-    setMessages(prev => [
-      ...prev,
-      { id: Date.now() + 1, sender: 'assistant', text: responseText, actions: responseActions }
-    ]);
-    setTyping(false);
+      if (res.action === 'navigate_settings') {
+        responseActions = [{ label: '⚙️ Open Connected Accounts', type: 'navigate', path: '/dashboard/connected' }];
+      } else if (res.action === 'navigate_url') {
+        responseActions = [{ label: '🔍 Open URL Scanner', type: 'navigate', path: '/dashboard/url-scanner' }];
+      } else if (res.intent === 'phishing_identify' || res.intent === 'phishing_definition') {
+        responseActions = [{ label: '🛡️ Scan Suspicious Text', type: 'navigate', path: '/dashboard/text-scanner' }];
+      } else {
+        responseActions = [
+          { label: '📅 Book a Demo', type: 'navigate', path: '/contact' },
+          { label: '💳 View Pricing', type: 'navigate', path: '/pricing' }
+        ];
+      }
+    } catch (err) {
+      console.warn("Backend Chat API unavailable, falling back to local knowledge base", err);
+      // Client-side fallback if backend fails or is offline
+      const lowerText = userText.toLowerCase();
+      let matchedIntent = null;
+      for (const intent of KNOWLEDGE_BASE.intents) {
+        if (intent.keywords.some(kw => lowerText.includes(kw))) {
+          matchedIntent = intent;
+          break;
+        }
+      }
+      if (lowerText.startsWith('create ticket') || lowerText.includes('support ticket')) {
+        responseText = lang === 'English'
+          ? "I have successfully initiated a support incident ticket on your dashboard queue."
+          : "सपोर्ट टिकट सफलतापूर्वक बना दिया गया है।";
+        responseActions = [{ label: '🎟️ View Support Tickets', type: 'navigate', path: '/dashboard/tickets' }];
+      } else if (matchedIntent) {
+        responseText = matchedIntent.responses[lang] || matchedIntent.responses.English;
+        responseActions = matchedIntent.actions;
+      } else {
+        responseText = KNOWLEDGE_BASE.defaultResponse[lang] || KNOWLEDGE_BASE.defaultResponse.English;
+        responseActions = [
+          { label: '📅 Book a Demo', type: 'navigate', path: '/contact' },
+          { label: '💳 View Pricing', type: 'navigate', path: '/pricing' }
+        ];
+      }
+    } finally {
+      setMessages(prev => [
+        ...prev,
+        { id: Date.now() + 1, sender: 'assistant', text: responseText, actions: responseActions }
+      ]);
+      setTyping(false);
+    }
   };
 
   const languagesList = [

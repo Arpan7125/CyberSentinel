@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import GlobalMap from './GlobalMap';
 import { useAuth } from '../AuthContext';
 
-const API = 'http://localhost:8000/api';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const EMPTY_STATS = {
   total_scans: 0, total_threats: 0, avg_risk: 0, threats_percentage: 0,
@@ -15,7 +15,7 @@ const EMPTY_STATS = {
 function StatCard({ icon, label, value, subtext, colorClass, borderGlow }) {
   return (
     <div 
-      className="glass-card" 
+      className="glass-card floating-card-subtle" 
       style={{
         padding: '24px 28px',
         flex: 1, 
@@ -193,7 +193,7 @@ export default function Dashboard({ triggerScanRefetch }) {
       </div>
 
       {/* Gmail Inbox Intelligence Scanner */}
-      <div className="glass-card" style={{ padding: 24, margin: '24px 0' }}>
+      <div className="glass-card floating-card-subtle" style={{ padding: 24, margin: '24px 0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -273,7 +273,7 @@ export default function Dashboard({ triggerScanRefetch }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 24 }}>
         {/* Global Map Terminal Section */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div className="glass-card" style={{ padding: 24, flex: 1 }}>
+          <div className="glass-card floating-glow" style={{ padding: 24, flex: 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -295,7 +295,7 @@ export default function Dashboard({ triggerScanRefetch }) {
         {/* Right column: Risk logs and distributions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {/* Risk distribution bars */}
-          <div className="glass-card" style={{ padding: 24 }}>
+          <div className="glass-card floating-card-subtle" style={{ padding: 24 }}>
             <div style={{ fontSize: 13, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 20 }}>
               Risk Level Metrics
             </div>

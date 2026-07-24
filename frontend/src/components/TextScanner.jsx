@@ -6,6 +6,7 @@ import {
   Info
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
+import { scanService, api } from '../services/api';
 
 function RiskBadge({ level }) {
   const map = { Low: 'badge-low', Medium: 'badge-medium', High: 'badge-high', Critical: 'badge-critical' };
@@ -37,19 +38,10 @@ export default function TextScanner({ onScanComplete }) {
     setSendingSms(true);
     setSmsStatus('');
     try {
-      const response = await fetch('http://localhost:8000/api/integrations/sms/dispatch/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Token ${token}` } : {})
-        },
-        body: JSON.stringify({
-          message: `🚨 SECURITY ALERT: CyberSentinel logged a ${result.risk_level}-risk threat with coefficient ${result.risk_score}%. Content snippet: "${text.substring(0, 80)}..."`,
-          to_number: alertPhone
-        })
+      const data = await api.post('/integrations/sms/dispatch/', {
+        message: `🚨 SECURITY ALERT: CyberSentinel logged a ${result.risk_level}-risk threat with coefficient ${result.risk_score}%. Content snippet: "${text.substring(0, 80)}..."`,
+        to_number: alertPhone
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to dispatch SMS.');
       setSmsStatus(data.message);
     } catch (err) {
       setSmsStatus(`Dispatch failed: ${err.message}`);
@@ -64,17 +56,7 @@ export default function TextScanner({ onScanComplete }) {
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/analyze/text/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to analyze text');
-      }
-
-      const data = await response.json();
+      const data = await scanService.analyzeText({ text });
       setResult(data);
       setCheckedRecs({});
       if (onScanComplete) onScanComplete(); // trigger dashboard refresh

@@ -79,6 +79,15 @@ class PhishingClassifier:
         self.feature_weights = dict(zip(feature_names, coefficients))
 
     def analyze_text(self, text):
+        if not text or not isinstance(text, str) or not text.strip():
+            return {
+                "risk_score": 0.0,
+                "risk_level": "Low",
+                "threat_indicators": [],
+                "highlighted_words": [],
+                "recommendations": ["Please enter text to analyze for security threats."]
+            }
+
         if not self.trained:
             self.train_model()
 

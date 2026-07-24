@@ -133,14 +133,14 @@ export function AuthProvider({ children }) {
     };
   }, [token, logout]);
 
-  const addLoginRecord = (userEmail, success = true, role = 'customer') => {
+  const addLoginRecord = (userEmail, success = true, role = 'customer', customIp = null) => {
     const record = {
       id: Date.now(),
       timestamp: new Date().toISOString(),
-      ip: '192.168.1.42',
-      device: navigator.userAgent.includes('Windows') ? 'Windows / Chrome' : 'Mobile / iOS',
+      ip: customIp || '127.0.0.1',
+      device: navigator.userAgent.includes('Windows') ? 'Windows Desktop' : (navigator.userAgent.includes('Mac') ? 'macOS Desktop' : 'Mobile / Web App'),
       success,
-      location: 'San Francisco, CA'
+      location: 'Local Workstation'
     };
     setLoginHistory(prev => {
       const updated = [record, ...prev].slice(0, 50);

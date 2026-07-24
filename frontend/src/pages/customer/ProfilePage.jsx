@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../AuthContext';
+import { authService } from '../../services/api';
 
 export default function ProfilePage() {
   const { user, setUser } = useAuth();
   const [personalForm, setPersonalForm] = useState({
-    fullName: user?.fullName || '',
+    fullName: user?.fullName || user?.username || '',
     email: user?.email || '',
-    phone: '+1 (555) 019-2834',
-    company: user?.company || 'IndieSec',
-    title: 'Security Analyst'
+    phone: user?.phone || '',
+    company: user?.company || '',
+    title: user?.title || 'Security Analyst'
   });
 
   const [passwordForm, setPasswordForm] = useState({
@@ -21,26 +22,71 @@ export default function ProfilePage() {
   const [status, setStatus] = useState({ type: '', message: '' });
   const [pwdStatus, setPwdStatus] = useState({ type: '', message: '' });
 
-  const handlePersonalSubmit = (e) => {
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const data = await authService.profile();
+        if (data) {
+          setPersonalForm(p => ({
+            ...p,
+            fullName: data.full_name || data.username || p.fullName,
+            email: data.email || p.email,
+            company: data.company || p.company,
+            phone: data.phone || p.phone,
+          }));
+        }
+      } catch (err) {
+        console.error("Failed to load profile:", err);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  const handlePersonalSubmit = async (e) => {
     e.preventDefault();
-    setStatus({ type: 'success', message: 'Profile details successfully updated.' });
-    setUser(prev => ({
-      ...prev,
-      fullName: personalForm.fullName,
-      email: personalForm.email,
-      company: personalForm.company
-    }));
+    setStatus({ type: '', message: '' });
+    try {
+      const res = await authService.updateProfile({
+        full_name: personalForm.fullName,
+        email: personalForm.email,
+        company: personalForm.company,
+      });
+      setStatus({ type: 'success', message: res.message || 'Profile details successfully updated.' });
+      if (res.user) {
+        setUser(prev => ({
+          ...prev,
+          fullName: res.user.full_name,
+          email: res.user.email,
+        }));
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus({ type: 'error', message: err.message || 'Failed to update profile.' });
+    }
     setTimeout(() => setStatus({ type: '', message: '' }), 4000);
   };
 
-  const handlePasswordSubmit = (e) => {
+  const handlePasswordSubmit = async (e) => {
     e.preventDefault();
+    setPwdStatus({ type: '', message: '' });
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       setPwdStatus({ type: 'error', message: 'New passwords do not match.' });
       return;
     }
-    setPwdStatus({ type: 'success', message: 'Password updated successfully.' });
-    setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+
+    try {
+      const res = await authService.changePassword({
+        current_password: passwordForm.currentPassword,
+        new_password: passwordForm.newPassword,
+        confirm_password: passwordForm.confirmPassword,
+      });
+      setPwdStatus({ type: 'success', message: res.message || 'Password updated successfully.' });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      console.error(err);
+      setPwdStatus({ type: 'error', message: err.message || 'Failed to update password.' });
+    }
     setTimeout(() => setPwdStatus({ type: '', message: '' }), 4000);
   };
 

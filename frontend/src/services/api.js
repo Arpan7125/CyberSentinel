@@ -88,6 +88,8 @@ export const authService = {
   register: (data) => api.post('/auth/register/', data),
   logout: () => api.post('/auth/logout/'),
   profile: () => api.get('/auth/profile/'),
+  updateProfile: (data) => api.patch('/auth/profile/', data),
+  changePassword: (data) => api.post('/auth/change-password/', data),
   forgotPassword: (email) => api.post('/auth/forgot-password/', { email }),
   resetPassword: (data) => api.post('/auth/reset-password/', data),
   googleLogin: (credential) => api.post('/auth/google-login/', { credential }),
@@ -100,6 +102,8 @@ export const scanService = {
   analyzeText: (data) => api.post('/analyze/text/', data),
   analyzeUrl: (data) => api.post('/analyze/url/', data),
   analyzeScreenshot: (formData) => api.upload('/analyze/screenshot/', formData),
+  analyzeFile: (formData) => api.upload('/analyze/file/', formData),
+  analyzePhone: (data) => api.post('/analyze/phone/', data),
 };
 
 export const dashboardService = {
@@ -116,7 +120,7 @@ export const subscribeService = {
 };
 
 export const chatService = {
-  send: (message) => api.post('/chat/', { message }),
+  send: (message, language = 'English') => api.post('/chat/', { message, language }),
 };
 
 export const adminService = {
@@ -145,6 +149,7 @@ export const saasService = {
   getSubscriptions: () => api.get('/subscriptions/'),
   getInvoices: () => api.get('/invoices/'),
   reportScam: (data) => api.post('/scam-reports/', data),
+  getScamReports: () => api.get('/scam-reports/'),
 
   getJobs: (params = '') => api.get(`/jobs/${params}`),
   getCaseStudies: (params = '') => api.get(`/case-studies/${params}`),
@@ -160,6 +165,7 @@ export const integrationsService = {
   getSyncLogs: (account_id) => api.get(`/integrations/connected/${account_id}/logs/`),
   getConfig: () => api.get('/integrations/config/'),
   saveConfig: (data) => api.post('/integrations/config/', data),
+  importGmail: (simulated = true) => api.post('/integrations/gmail/import/', { simulated }),
 };
 
 export const supportService = {

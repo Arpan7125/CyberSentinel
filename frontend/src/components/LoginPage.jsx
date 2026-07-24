@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../AuthContext';
+import { authService } from '../services/api';
 
 export default function LoginPage({ onSwitch, onSuccess }) {
   const { login, logout } = useAuth();
@@ -23,18 +24,16 @@ export default function LoginPage({ onSwitch, onSuccess }) {
   const handleLoginSubmit = async e => {
     e.preventDefault();
     setError('');
-    setSuccessMessage('');
     setLoading(true);
     try {
-      const loggedUser = await login(form.username, form.password);
-      if (activeRole === 'admin' && !loggedUser.is_admin) {
-        await logout();
-        setError('Access Denied: You do not possess administrator privileges for this node.');
+      const res = await login(form.username, form.password, activeRole);
+      if (res.success) {
+        if (onSuccess) onSuccess(res.user);
       } else {
-        onSuccess(loggedUser);
+        setError(res.error || 'Invalid credentials');
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -47,14 +46,7 @@ export default function LoginPage({ onSwitch, onSuccess }) {
     setMockOtpHelp('');
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/auth/forgot-password/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotForm.email }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to request reset OTP.');
-      
+      const data = await authService.forgotPassword(forgotForm.email);
       setForgotStep(2);
       if (data.is_mocked && data.dev_otp) {
         setMockOtpHelp(`[Dev Mock Mode] Reset code: ${data.dev_otp} (Check server console logs)`);
@@ -77,18 +69,12 @@ export default function LoginPage({ onSwitch, onSuccess }) {
     }
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/auth/reset-password/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: forgotForm.email,
-          otp: forgotForm.otp,
-          new_password: forgotForm.newPassword,
-          confirm_password: forgotForm.confirmPassword
-        }),
+      const data = await authService.resetPassword({
+        email: forgotForm.email,
+        otp: forgotForm.otp,
+        new_password: forgotForm.newPassword,
+        confirm_password: forgotForm.confirmPassword
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to reset password.');
       
       setMode('login');
       setForgotStep(1);

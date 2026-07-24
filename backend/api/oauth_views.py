@@ -35,7 +35,7 @@ class OAuthStartView(APIView):
         # auth_url = f"{provider.auth_url}?client_id={provider.client_id}&redirect_uri={provider.redirect_uri}&scope={provider.default_scopes}&response_type=code"
         
         # We are using mocked OAuth flow for testing
-        mock_auth_url = f"/app/integrations/oauth/callback?provider={provider.id}&mock_code={uuid.uuid4().hex}"
+        mock_auth_url = f"/dashboard/integrations/oauth/callback?provider={provider.id}&mock_code={uuid.uuid4().hex}"
         
         return Response({
             'auth_url': mock_auth_url,

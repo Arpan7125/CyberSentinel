@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, File, AlertTriangle, ShieldCheck, X } from 'lucide-react';
+import { scanService } from '../../services/api';
 
 export default function FileScannerPage() {
   const [file, setFile] = useState(null);
@@ -16,40 +17,38 @@ export default function FileScannerPage() {
     }
   };
 
-  const simulateScan = () => {
+  const simulateScan = async () => {
     if (!file) return;
     setIsScanning(true);
     setProgress(0);
     setResult(null);
 
+    const formData = new FormData();
+    formData.append('file', file);
+
     const interval = setInterval(() => {
       setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          finishScan();
-          return 100;
-        }
-        return prev + Math.floor(Math.random() * 15) + 5;
+        if (prev >= 90) return 90;
+        return prev + Math.floor(Math.random() * 12) + 4;
       });
-    }, 300);
-  };
+    }, 250);
 
-  const finishScan = () => {
-    setIsScanning(false);
-    
-    // Simulate finding malware if file ends with .exe or .zip, otherwise safe
-    const isDangerous = file.name.endsWith('.exe') || file.name.endsWith('.zip') || file.name.endsWith('.scr');
-    
-    setResult({
-      fileName: file.name,
-      fileSize: (file.size / 1024 / 1024).toFixed(2) + ' MB',
-      isDangerous,
-      threatName: isDangerous ? 'Trojan.Win32.Generic!bt' : 'No Threats Detected',
-      hash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      engines: 64,
-      detections: isDangerous ? 42 : 0,
-      sandboxStatus: isDangerous ? 'Malicious Behavior Observed' : 'Clean Execution'
-    });
+    try {
+      const res = await scanService.analyzeFile(formData);
+      clearInterval(interval);
+      setProgress(100);
+      
+      // Brief delay to make the scan feel satisfying
+      setTimeout(() => {
+        setIsScanning(false);
+        setResult(res);
+      }, 300);
+    } catch (err) {
+      clearInterval(interval);
+      setIsScanning(false);
+      console.error(err);
+      alert('Failed to analyze file. Server might be down.');
+    }
   };
 
   const reset = () => {

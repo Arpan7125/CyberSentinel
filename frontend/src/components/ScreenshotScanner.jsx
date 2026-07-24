@@ -5,6 +5,7 @@ import {
   CheckSquare, 
   FileText
 } from 'lucide-react';
+import { scanService } from '../services/api';
 
 export default function ScreenshotScanner({ onScanComplete }) {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -56,17 +57,7 @@ export default function ScreenshotScanner({ onScanComplete }) {
     formData.append("image", selectedFile);
 
     try {
-      const response = await fetch('http://localhost:8000/api/analyze/screenshot/', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze screenshot');
-      }
-
-      const data = await response.json();
+      const data = await scanService.analyzeScreenshot(formData);
       setResult(data);
       setCheckedRecs({});
       if (onScanComplete) onScanComplete(); // trigger dashboard refresh

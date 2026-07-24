@@ -125,9 +125,6 @@ class DashboardStatsView(APIView):
         
         # Generate initial logs if table is completely empty for this user (helps UI presentation immediately)
         if user:
-            user_logs_count = ScanLog.objects.filter(user=user).count()
-            if user_logs_count == 0:
-                self._prepopulate_mock_logs(user)
             logs = ScanLog.objects.filter(user=user)
         else:
             anon_logs_count = ScanLog.objects.filter(user__isnull=True).count()
@@ -297,3 +294,238 @@ class QuizQuestionView(APIView):
                 explanation=q["explanation"],
                 clues=q["clues"]
             )
+
+
+import hashlib
+import re
+from .models import ScamReport
+
+class FileAnalysisView(APIView):
+    def post(self, request):
+        file_obj = request.FILES.get("file", None)
+        if not file_obj:
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Calculate real SHA256 of the uploaded file
+        sha256 = hashlib.sha256()
+        for chunk in file_obj.chunks():
+            sha256.update(chunk)
+        file_hash = sha256.hexdigest()
+        
+        file_name = file_obj.name
+        file_size_mb = round(file_obj.size / (1024 * 1024), 2)
+        
+        # Check extensions for high risk
+        ext = file_name.split('.')[-1].lower() if '.' in file_name else ''
+        is_dangerous = ext in ['exe', 'zip', 'scr', 'dll', 'bat', 'cmd', 'vbs', 'js', 'sh']
+        
+        import os
+        import requests
+
+        vt_key = os.environ.get("VIRUSTOTAL_API_KEY")
+        engines_total = 1
+        detections_count = 1 if is_dangerous else 0
+
+        if vt_key:
+            try:
+                vt_url = f"https://www.virustotal.com/api/v3/files/{file_hash}"
+                headers = {"x-api-key": vt_key}
+                vt_resp = requests.get(vt_url, headers=headers, timeout=5)
+                if vt_resp.status_code == 200:
+                    vt_data = vt_resp.json().get("data", {}).get("attributes", {})
+                    stats = vt_data.get("last_analysis_stats", {})
+                    malicious = stats.get("malicious", 0)
+                    total = sum(stats.values())
+                    engines_total = total or 70
+                    detections_count = malicious
+                    is_dangerous = malicious > 0
+                    threat_name = vt_data.get("meaningful_name") or (f"Malware Detected ({malicious} engines)" if is_dangerous else "No Threats Detected")
+                    risk_score = min(99.0, round((malicious / max(1, total)) * 100, 1)) if total > 0 else (92.0 if is_dangerous else 4.0)
+                    risk_level = "Critical" if risk_score > 75 else ("High" if risk_score > 50 else ("Medium" if risk_score > 25 else "Low"))
+                    sandbox_status = f"VirusTotal Verified ({malicious}/{total} Flagged)"
+            except Exception:
+                pass
+
+        user = request.user if request.user and request.user.is_authenticated else None
+        # Log scan in database
+        ScanLog.objects.create(
+            user=user,
+            scan_type='TEXT',
+            input_content=f"[File Scan: {file_name}] Hash: {file_hash}",
+            risk_score=risk_score,
+            risk_level=risk_level
+        )
+        
+        return Response({
+            "fileName": file_name,
+            "fileSize": f"{file_size_mb} MB",
+            "isDangerous": is_dangerous,
+            "threatName": threat_name,
+            "hash": file_hash,
+            "engines": engines_total,
+            "detections": detections_count,
+            "sandboxStatus": sandbox_status,
+            "risk_score": risk_score,
+            "risk_level": risk_level
+        }, status=status.HTTP_200_OK)
+
+
+import phonenumbers
+from phonenumbers import geocoder, carrier as phone_carrier, timezone
+
+class PhoneAnalysisView(APIView):
+    def post(self, request):
+        phone = request.data.get("phone", "").strip()
+        if not phone:
+            return Response({"error": "Phone number is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Real phone lookup using phonenumbers
+        try:
+            # Parse the phone number. We assume US if no country code provided
+            if not phone.startswith('+'):
+                parsed_phone = phonenumbers.parse(phone, "US")
+            else:
+                parsed_phone = phonenumbers.parse(phone, None)
+            
+            if not phonenumbers.is_valid_number(parsed_phone):
+                return Response({"error": "Invalid phone number format. Include country code (e.g. +1)."}, status=status.HTTP_400_BAD_REQUEST)
+                
+            formatted_number = phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+            real_country = geocoder.description_for_number(parsed_phone, "en") or "Unknown Region"
+            real_carrier = phone_carrier.name_for_number(parsed_phone, "en") or "Unknown Carrier"
+            timezones = timezone.time_zones_for_number(parsed_phone)
+            tz_str = timezones[0] if timezones else "Unknown Timezone"
+            number_type = phonenumbers.number_type(parsed_phone)
+            
+            # Map number type
+            type_mapping = {
+                phonenumbers.PhoneNumberType.MOBILE: "Mobile",
+                phonenumbers.PhoneNumberType.FIXED_LINE: "Fixed Line",
+                phonenumbers.PhoneNumberType.FIXED_LINE_OR_MOBILE: "Fixed Line / Mobile",
+                phonenumbers.PhoneNumberType.TOLL_FREE: "Toll Free",
+                phonenumbers.PhoneNumberType.PREMIUM_RATE: "Premium Rate",
+                phonenumbers.PhoneNumberType.SHARED_COST: "Shared Cost",
+                phonenumbers.PhoneNumberType.VOIP: "VoIP",
+                phonenumbers.PhoneNumberType.PERSONAL_NUMBER: "Personal Number",
+                phonenumbers.PhoneNumberType.PAGER: "Pager",
+                phonenumbers.PhoneNumberType.UAN: "UAN",
+                phonenumbers.PhoneNumberType.VOICEMAIL: "Voicemail"
+            }
+            real_type = type_mapping.get(number_type, "Unknown Type")
+            
+        except Exception as e:
+            return Response({"error": f"Error parsing phone number: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Search ScamReport database for any reports matching this phone number
+        from django.db.models import Q
+        reports_qs = ScamReport.objects.filter(Q(url_or_email__icontains=phone) | Q(description__icontains=phone))
+        reports_count = reports_qs.count()
+        
+        import os
+        import requests
+        
+        # Check for IPQualityScore API key
+        ipqs_api_key = os.environ.get("IPQS_API_KEY")
+        
+        # Default fallback values
+        num_type = real_type
+        
+        if ipqs_api_key:
+            api_url = f"https://www.ipqualityscore.com/api/json/phone/{ipqs_api_key}/{phone}"
+            try:
+                ipqs_response = requests.get(api_url, timeout=5).json()
+                if ipqs_response.get("success"):
+                    spam_score = ipqs_response.get("fraud_score", 0)
+                    recent_abuse = ipqs_response.get("recent_abuse", False)
+                    spammer = ipqs_response.get("spammer", False)
+                    
+                    if ipqs_response.get("carrier") and ipqs_response.get("carrier") != "N/A":
+                        real_carrier = ipqs_response.get("carrier")
+                    if ipqs_response.get("country"):
+                        real_country = ipqs_response.get("country")
+                        
+                    if spammer or spam_score >= 85:
+                        reputation = 'Dangerous'
+                    elif recent_abuse or spam_score >= 60:
+                        reputation = 'Suspicious'
+                    else:
+                        reputation = 'Clean'
+                        
+                    if ipqs_response.get("line_type") and ipqs_response.get("line_type") != "N/A":
+                        num_type = ipqs_response.get("line_type")
+                    
+                    ai_assessment = "According to real-time threat intelligence: "
+                    if reputation == 'Dangerous':
+                        ai_assessment += f"This number has a high fraud score ({spam_score}) and is identified as a known spammer. "
+                    elif reputation == 'Suspicious':
+                        ai_assessment += f"This number shows signs of recent abuse (fraud score: {spam_score}). "
+                    else:
+                        ai_assessment += "No recent abuse or spam activity detected. "
+                        
+                    if reports_count > 0:
+                        ai_assessment += f"Additionally, {reports_count} user(s) reported this number in our local database."
+                        spam_score = min(99, spam_score + 15)  # Boost spam score if there are local reports
+                else:
+                    raise Exception(ipqs_response.get("message", "API request failed"))
+            except Exception as e:
+                spam_score = min(99, 45 + reports_count * 15) if reports_count > 0 else 0
+                reputation = 'Dangerous' if spam_score > 60 else ('Suspicious' if reports_count > 0 else 'Clean')
+                ai_assessment = f"Live API lookup failed ({str(e)}). Falling back to local data. Local reports: {reports_count}."
+        else:
+            # Free API approach: Scrape shouldianswer.com as a fallback when no API key is present
+            import re
+            
+            clean_number = "".join(filter(str.isdigit, phone))
+            try:
+                # Add headers to avoid basic blocks
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+                scrape_response = requests.get(f"https://www.shouldianswer.net/phone-number/{clean_number}", headers=headers, timeout=5)
+                
+                spam_score = min(99, 45 + reports_count * 15) if reports_count > 0 else 0
+                reputation = 'Clean'
+                ai_assessment = "No recent abuse or spam activity detected."
+                
+                # Check meta description for community rating
+                match = re.search(r'<meta name="description" content="(.*?)"', scrape_response.text)
+                if match:
+                    desc = match.group(1).lower()
+                    if "negative" in desc or "spam" in desc or "scam" in desc:
+                        spam_score = max(spam_score, 85)
+                        reputation = 'Dangerous'
+                        ai_assessment = f"This number is flagged as NEGATIVE or SPAM by the online community."
+                    elif "neutral" in desc:
+                        spam_score = max(spam_score, 45)
+                        reputation = 'Suspicious'
+                        ai_assessment = f"This number has a neutral/mixed reputation."
+                    elif "positive" in desc:
+                        spam_score = max(spam_score, 0)
+                        ai_assessment = f"This number is rated as POSITIVE/SAFE by the online community."
+                        
+                if reports_count > 0:
+                    ai_assessment += f" Additionally, {reports_count} user(s) reported this number in our local database."
+            except Exception as e:
+                spam_score = min(99, 45 + reports_count * 15) if reports_count > 0 else 0
+                reputation = 'Dangerous' if spam_score > 60 else ('Suspicious' if reports_count > 0 else 'Clean')
+                ai_assessment = f"Free live lookup failed ({str(e)}). Falling back to local data. Local reports: {reports_count}."
+
+        # Retrieve comments from database reports
+        community_comments = []
+        if reports_count > 0:
+            for r in reports_qs[:5]:
+                author = r.reported_by.username if r.reported_by else "Anonymous"
+                text = r.description[:100] + ('...' if len(r.description) > 100 else '')
+                date_str = r.created_at.strftime("%Y-%m-%d")
+                community_comments.append({"author": author, "text": text, "date": date_str})
+                
+        return Response({
+            "number": formatted_number,
+            "country": f"{real_country} ({tz_str})",
+            "carrier": real_carrier,
+            "type": num_type,
+            "reputation": reputation,
+            "spamScore": spam_score,
+            "reports": reports_count,
+            "lastReported": "Recent" if reports_count > 0 else "N/A",
+            "aiAssessment": ai_assessment,
+            "communityComments": community_comments
+        }, status=status.HTTP_200_OK)

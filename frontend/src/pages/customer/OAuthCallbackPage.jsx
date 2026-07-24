@@ -54,7 +54,7 @@ export default function OAuthCallbackPage() {
         navigate('/dashboard/integrations', { replace: true });
         
       } catch (err) {
-        setError(err.response?.data?.error || 'Failed to authorize account.');
+        setError(err.data?.error || err.message || 'Failed to authorize account.');
       }
     };
 

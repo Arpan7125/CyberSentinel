@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import TextAnalysisView, UrlAnalysisView, ScreenshotAnalysisView, DashboardStatsView, QuizQuestionView
-from .auth_views import RegisterView, LoginView, LogoutView, ProfileView, ForgotPasswordView, ResetPasswordView, GoogleLoginView, AdminRegisterView, AdminLoginView, RequestOTPView, OTPLoginView
+from .views import TextAnalysisView, UrlAnalysisView, ScreenshotAnalysisView, DashboardStatsView, QuizQuestionView, FileAnalysisView, PhoneAnalysisView
+from .auth_views import RegisterView, LoginView, LogoutView, ProfileView, ForgotPasswordView, ResetPasswordView, GoogleLoginView, AdminRegisterView, AdminLoginView, RequestOTPView, OTPLoginView, ChangePasswordView
 from .subscription_views import SubscribeView, UnsubscribeView, SubscriberListView
 from .chat_views import ChatbotView
 from .admin_views import AdminStatsView, AdminUserActionView
@@ -36,6 +36,8 @@ urlpatterns = [
     path('analyze/text/', TextAnalysisView.as_view(), name='analyze-text'),
     path('analyze/url/', UrlAnalysisView.as_view(), name='analyze-url'),
     path('analyze/screenshot/', ScreenshotAnalysisView.as_view(), name='analyze-screenshot'),
+    path('analyze/file/', FileAnalysisView.as_view(), name='analyze-file'),
+    path('analyze/phone/', PhoneAnalysisView.as_view(), name='analyze-phone'),
     
     # Dashboard
     path('dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
@@ -48,6 +50,7 @@ urlpatterns = [
     path('auth/login/', LoginView.as_view(), name='auth-login'),
     path('auth/logout/', LogoutView.as_view(), name='auth-logout'),
     path('auth/profile/', ProfileView.as_view(), name='auth-profile'),
+    path('auth/change-password/', ChangePasswordView.as_view(), name='auth-change-password'),
     path('auth/forgot-password/', ForgotPasswordView.as_view(), name='auth-forgot-password'),
     path('auth/reset-password/', ResetPasswordView.as_view(), name='auth-reset-password'),
     path('auth/request-otp/', RequestOTPView.as_view(), name='auth-request-otp'),

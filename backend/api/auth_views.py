@@ -243,6 +243,46 @@ class ProfileView(APIView):
             'is_new_user': is_new_user,
         }, status=status.HTTP_200_OK)
 
+    def patch(self, request):
+        """Update the current user's profile fields."""
+        user = request.user
+        data = request.data
+        
+        if 'full_name' in data:
+            name_parts = data['full_name'].strip().split(' ', 1)
+            user.first_name = name_parts[0]
+            user.last_name = name_parts[1] if len(name_parts) > 1 else ''
+        
+        if 'email' in data:
+            new_email = data['email'].strip()
+            if new_email and new_email != user.email:
+                if User.objects.filter(email=new_email).exclude(pk=user.pk).exists():
+                    return Response({'error': 'This email is already in use.'}, status=status.HTTP_400_BAD_REQUEST)
+                user.email = new_email
+        
+        user.save()
+        
+        # Update UserProfile fields (company, phone)
+        try:
+            from .models import UserProfile
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            if 'company' in data:
+                profile.company = data['company'].strip()
+                profile.save()
+        except Exception:
+            pass
+        
+        return Response({
+            'message': 'Profile updated successfully.',
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'full_name': f"{user.first_name} {user.last_name}".strip(),
+                'is_admin': user.is_staff or user.is_superuser,
+            }
+        }, status=status.HTTP_200_OK)
+
     def delete(self, request):
         user = request.user
         if user.is_staff or user.is_superuser:
@@ -510,6 +550,44 @@ class GoogleLoginView(APIView):
                 'is_admin': user.is_staff or user.is_superuser
             }
         }, status=status.HTTP_200_OK)
+
+
+class ChangePasswordView(APIView):
+    """Allow an authenticated user to change their password."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        current_password = request.data.get('current_password', '')
+        new_password = request.data.get('new_password', '')
+        confirm_password = request.data.get('confirm_password', '')
+
+        if not current_password or not new_password:
+            return Response({'error': 'Current password and new password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user.check_password(current_password):
+            return Response({'error': 'Incorrect current password.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(new_password) < 6:
+            return Response({'error': 'New password must be at least 6 characters long.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if new_password != confirm_password:
+            return Response({'error': 'New passwords do not match.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+
+        # Update auth token after password change
+        from rest_framework.authtoken.models import Token
+        Token.objects.filter(user=user).delete()
+        new_token = Token.objects.create(user=user)
+
+        return Response({
+            'message': 'Password updated successfully.',
+            'token': new_token.key
+        }, status=status.HTTP_200_OK)
+
 
 
 

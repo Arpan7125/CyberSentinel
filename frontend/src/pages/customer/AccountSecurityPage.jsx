@@ -1,15 +1,66 @@
-import React, { useState } from 'react';
-import { Shield, Key, Smartphone, Mail, Globe, Lock, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Shield, Key, Smartphone, Mail, Globe, Lock, AlertCircle, Plus, X } from 'lucide-react';
+import { integrationsService } from '../../services/api';
 import '../../assets/analyzer.css';
 
 export default function AccountSecurityPage() {
-  const [accounts, setAccounts] = useState([
-    { provider: 'Google', email: 'joshua@cybersentinel.ai', status: 'Connected', risk: 'Low', icon: <Mail color="#EA4335" /> },
-    { provider: 'Microsoft', email: 'j.joby@outlook.com', status: 'Action Required', risk: 'High', icon: <Globe color="#00A4EF" /> },
-    { provider: 'GitHub', email: 'joshua-dev', status: 'Connected', risk: 'Low', icon: <Shield color="#fff" /> },
-  ]);
-
+  const [accounts, setAccounts] = useState([]);
   const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [providers, setProviders] = useState([]);
+  const [showProviders, setShowProviders] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState(null);
+  const [managingAccount, setManagingAccount] = useState(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchAccountsAndProviders = async () => {
+      try {
+        const [accRes, provRes] = await Promise.all([
+          integrationsService.getConnectedAccounts().catch(() => []),
+          integrationsService.getProviders().catch(() => [])
+        ]);
+        
+        const connected = accRes || [];
+        const mapped = connected.map(acc => ({
+          provider: acc.provider_name,
+          email: acc.email,
+          status: acc.status === 'connected' ? 'Connected' : 'Action Required',
+          risk: acc.health_status === 'Healthy' ? 'Low' : 'High',
+          icon: <Mail color="#AF52DE" />
+        }));
+        
+        if (mapped.length > 0) {
+          setAccounts(mapped);
+        } else {
+          setAccounts([
+            { provider: 'Google Workspace', email: 'joshua@cybersentinel.ai', status: 'Connected', risk: 'Low', icon: <Mail color="#EA4335" /> },
+            { provider: 'GitHub', email: 'joshua-dev', status: 'Connected', risk: 'Low', icon: <Shield color="#fff" /> }
+          ]);
+        }
+        
+        setProviders(provRes || []);
+      } catch (err) {
+        console.error("Failed to load data:", err);
+      }
+    };
+    fetchAccountsAndProviders();
+  }, []);
+
+  const handleLinkAccount = async (providerId) => {
+    setLoadingProvider(providerId);
+    try {
+      const res = await integrationsService.startOAuth(providerId);
+      if (res && res.auth_url) {
+        navigate(res.auth_url.replace('/dashboard', ''));
+      }
+    } catch (err) {
+      console.error("Failed to start OAuth:", err);
+      alert("Failed to connect to authentication provider.");
+    } finally {
+      setLoadingProvider(null);
+    }
+  };
 
   return (
     <div className="analyzer-page">
@@ -22,18 +73,22 @@ export default function AccountSecurityPage() {
         
         {/* Overall Security Posture */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
-          <div style={{ background: 'var(--bg-secondary)', padding: 24, borderRadius: 12, border: '1px solid var(--border-subtle)' }}>
+          <div className="floating-glow" style={{ background: 'var(--bg-secondary)', padding: 24, borderRadius: 12, border: '1px solid var(--border-subtle)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div style={{ background: 'rgba(50,215,75,0.1)', padding: 8, borderRadius: 8 }}>
                 <Shield color="#32D74B" size={24} />
               </div>
               <h3 style={{ fontSize: 16, fontWeight: 600 }}>Identity Score</h3>
             </div>
-            <div style={{ fontSize: 36, fontWeight: 800, color: '#32D74B' }}>85/100</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8 }}>Your accounts are relatively secure. Fix 1 issue to reach 100.</div>
+            <div style={{ fontSize: 36, fontWeight: 800, color: mfaEnabled ? '#32D74B' : '#32D74B' }}>
+              {mfaEnabled ? '100%' : '85%'}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8 }}>
+              {mfaEnabled ? 'Your identity score is at maximum strength (100%).' : 'Your accounts are relatively secure. Fix 1 issue to reach 100%.'}
+            </div>
           </div>
 
-          <div style={{ background: 'var(--bg-secondary)', padding: 24, borderRadius: 12, border: '1px solid var(--border-subtle)' }}>
+          <div className="floating-card-subtle" style={{ background: 'var(--bg-secondary)', padding: 24, borderRadius: 12, border: '1px solid var(--border-subtle)', animationDelay: '0.4s' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div style={{ background: mfaEnabled ? 'rgba(50,215,75,0.1)' : 'rgba(255,159,10,0.1)', padding: 8, borderRadius: 8 }}>
                 <Key color={mfaEnabled ? '#32D74B' : '#FF9F0A'} size={24} />
@@ -55,7 +110,7 @@ export default function AccountSecurityPage() {
             </div>
           </div>
 
-          <div style={{ background: 'var(--bg-secondary)', padding: 24, borderRadius: 12, border: '1px solid var(--border-subtle)' }}>
+          <div className="floating-card-subtle" style={{ background: 'var(--bg-secondary)', padding: 24, borderRadius: 12, border: '1px solid var(--border-subtle)', animationDelay: '0.8s' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div style={{ background: 'rgba(175,82,222,0.1)', padding: 8, borderRadius: 8 }}>
                 <Smartphone color="#AF52DE" size={24} />
@@ -92,18 +147,92 @@ export default function AccountSecurityPage() {
                       <AlertCircle size={14} /> Password breached
                     </div>
                   )}
-                  {acc.status === 'Connected' && (
-                    <div style={{ color: '#32D74B', fontSize: 13, fontWeight: 600 }}>Secure</div>
-                  )}
-                  <button className="btn-pub btn-pub-ghost btn-pub-sm">Manage</button>
+                  <button 
+                    className="btn-pub btn-pub-ghost btn-pub-sm"
+                    onClick={() => setManagingAccount(acc)}
+                  >
+                    Manage
+                  </button>
                 </div>
               </div>
             ))}
           </div>
 
-          <button className="btn-pub btn-pub-ghost" style={{ marginTop: 24, width: '100%', borderStyle: 'dashed' }}>
-            + Link Another Account
-          </button>
+          {/* Managing Account Modal */}
+          {managingAccount && (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+              <div style={{ background: 'var(--bg-secondary)', padding: 32, borderRadius: 12, width: '100%', maxWidth: 450, border: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ fontSize: 18, fontWeight: 700 }}>Manage {managingAccount.provider}</h3>
+                  <button onClick={() => setManagingAccount(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
+                </div>
+                <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20 }}>
+                  Account: <strong>{managingAccount.email}</strong><br/>
+                  Status: <span style={{ color: '#32D74B' }}>{managingAccount.status}</span><br/>
+                  Health: {managingAccount.risk} Risk
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <button 
+                    className="btn-pub btn-pub-primary"
+                    style={{ background: 'var(--accent-red)' }}
+                    onClick={async () => {
+                      if (managingAccount.id) {
+                        try {
+                          await integrationsService.disconnectAccount(managingAccount.id);
+                        } catch (err) {}
+                      }
+                      setAccounts(prev => prev.filter(a => a.email !== managingAccount.email));
+                      setManagingAccount(null);
+                    }}
+                  >
+                    Disconnect Integration
+                  </button>
+                  <button className="btn-pub btn-pub-ghost" onClick={() => setManagingAccount(null)}>Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!showProviders ? (
+            <button 
+              className="btn-pub btn-pub-ghost" 
+              style={{ marginTop: 24, width: '100%', borderStyle: 'dashed' }}
+              onClick={() => setShowProviders(true)}
+            >
+              + Link Another Account
+            </button>
+          ) : (
+            <div style={{ marginTop: 24, padding: 24, background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600 }}>Select Provider</h3>
+                <button 
+                  onClick={() => setShowProviders(false)} 
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {providers.map(prov => (
+                  <button 
+                    key={prov.id}
+                    className="btn-pub btn-pub-ghost"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 12, width: '100%' }}
+                    onClick={() => handleLinkAccount(prov.id)}
+                    disabled={loadingProvider === prov.id}
+                  >
+                    <Globe color="var(--text-secondary)" size={20} />
+                    <span>{loadingProvider === prov.id ? 'Connecting...' : `Connect ${prov.name}`}</span>
+                  </button>
+                ))}
+                {providers.length === 0 && (
+                  <div style={{ fontSize: 14, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>
+                    No additional providers available.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Password Health */}

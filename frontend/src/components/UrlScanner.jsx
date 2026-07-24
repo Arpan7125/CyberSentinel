@@ -6,6 +6,7 @@ import {
   Unlock, 
   AlertTriangle
 } from 'lucide-react';
+import { scanService } from '../services/api';
 
 export default function UrlScanner({ onScanComplete }) {
   const [urlInput, setUrlInput] = useState('');
@@ -19,17 +20,7 @@ export default function UrlScanner({ onScanComplete }) {
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/api/analyze/url/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: urlInput })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to analyze URL');
-      }
-
-      const data = await response.json();
+      const data = await scanService.analyzeUrl({ url: urlInput });
       setResult(data);
       setCheckedRecs({});
       if (onScanComplete) onScanComplete(); // trigger dashboard refresh

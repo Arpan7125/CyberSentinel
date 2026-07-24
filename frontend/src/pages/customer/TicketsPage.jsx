@@ -197,16 +197,16 @@ export default function TicketsPage() {
                 key={r.id}
                 style={{
                   padding: 14, borderRadius: 'var(--radius-md)',
-                  alignSelf: r.sender__id === activeTicket.customer__id ? 'flex-end' : 'flex-start',
-                  background: r.sender__id === activeTicket.customer__id ? 'var(--accent-muted)' : 'rgba(255,255,255,0.02)',
-                  border: `1px solid ${r.sender__id === activeTicket.customer__id ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                  alignSelf: r.sender === activeTicket.customer ? 'flex-end' : 'flex-start',
+                  background: r.sender === activeTicket.customer ? 'rgba(11, 87, 208, 0.08)' : '#f8fafc',
+                  border: `1px solid ${r.sender === activeTicket.customer ? '#0b57d0' : 'var(--border-subtle)'}`,
                   maxWidth: '85%',
                   display: r.is_internal ? 'none' : 'block' // Hide internal notes from customer
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginBottom: 6 }}>
                   <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {r.sender__id === activeTicket.customer__id ? 'You' : r.sender__username || 'Agent'}
+                    {r.sender === activeTicket.customer ? 'You' : r.sender_name || 'Agent'}
                   </span>
                   <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{new Date(r.created_at).toLocaleString()}</span>
                 </div>

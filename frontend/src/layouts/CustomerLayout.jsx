@@ -68,6 +68,15 @@ export default function CustomerLayout() {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
+  // Apply saved theme on mount (light by default)
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('cs_theme') || 'light';
+    document.body.className = '';
+    if (savedTheme !== 'amber') {
+      document.body.classList.add(`theme-${savedTheme}`);
+    }
+  }, []);
+
   useEffect(() => {
     setShowNotifications(false);
     setShowUserDropdown(false);

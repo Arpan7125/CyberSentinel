@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { UploadCloud, Image as ImageIcon, AlertTriangle, CheckCircle, Shield } from 'lucide-react';
+import { scanService } from '../../services/api';
 import '../../assets/analyzer.css';
 
 export default function ScreenshotAnalyzerPage() {
@@ -22,23 +23,33 @@ export default function ScreenshotAnalyzerPage() {
     }
   };
 
-  const analyzeScreenshot = () => {
+  const analyzeScreenshot = async () => {
     if (!file) return;
     setAnalyzing(true);
-    setTimeout(() => {
-      setAnalyzing(false);
+    setResult(null);
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const res = await scanService.analyzeScreenshot(formData);
       setResult({
-        riskLevel: 'Critical',
-        score: 92,
-        findings: [
-          { type: 'Spoofing', desc: 'The logo closely mimics PayPal but the aspect ratio is distorted.', critical: true },
-          { type: 'Urgency', desc: 'Text detects high urgency phrases ("Action Required Immediately").', critical: true },
-          { type: 'Suspicious URL', desc: 'Visible URL in address bar "pay-pal-secure.com" is a known phishing domain.', critical: true },
-        ],
-        extractedText: "Action Required Immediately. Your account has been locked. Click here to verify your identity.",
-        aiSummary: 'This screenshot highly likely depicts a phishing attempt targeting PayPal users. Do not interact with the source of this image.'
+        riskLevel: res.risk_level,
+        score: res.risk_score,
+        findings: res.threat_indicators ? res.threat_indicators.map(ind => ({
+          type: ind.type || 'Indicator',
+          desc: ind.description,
+          critical: res.risk_score > 50
+        })) : [],
+        extractedText: res.extracted_text,
+        aiSummary: res.ai_summary || `OCR successfully extracted the text from the image. Threat assessment classified this content as ${res.risk_level} risk with a score of ${res.risk_score}%.`
       });
-    }, 2500);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to analyze screenshot. Server might be offline.');
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   return (

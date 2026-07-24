@@ -1,38 +1,50 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { MessageSquare, ShieldAlert, AlertTriangle, CheckCircle, Smartphone, Database, Zap, Mail } from 'lucide-react';
 import InfoTooltip from '../../components/ui/InfoTooltip';
+import { scanService } from '../../services/api';
 
 export default function SmsAnalyzerPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [inputText, setInputText] = useState('');
+  const navigate = useNavigate();
 
-  const handleAnalyze = (e) => {
+  const handlePasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) setInputText(text);
+    } catch (err) {
+      alert("Unable to access clipboard. Please paste manually into the text box.");
+    }
+  };
+
+  const handleAnalyze = async (e) => {
     e.preventDefault();
     if (!inputText) return;
     setAnalyzing(true);
     setResult(null);
 
-    // Simulate AI Analysis
-    setTimeout(() => {
-      setAnalyzing(false);
+    try {
+      const res = await scanService.analyzeText({ text: inputText });
       setResult({
-        threatScore: 95,
-        confidence: 'Critical',
-        category: 'Bank Impersonation / Smishing',
-        evidence: [
-          'Message claims an unauthorized transaction occurred.',
-          'Includes a suspicious shortened URL (bit.ly or similar).',
-          'Urgent call to action requesting immediate verification.'
-        ],
-        explanation: 'This is a classic "Smishing" (SMS Phishing) attempt. Scammers impersonate your bank to create panic. The link leads to a fake login page designed to steal your online banking credentials.',
-        action: 'Delete the text immediately. Do not click the link. If concerned, log into your bank app directly.',
-        tips: [
-          'Banks never send links in SMS asking you to verify your identity or cancel a transaction.',
-          'Always navigate to your bank\'s website manually rather than clicking text links.'
-        ]
+        threatScore: res.risk_score,
+        confidence: res.risk_level,
+        category: res.risk_level === 'Low' ? 'Clean / Safe Message' : res.risk_score > 75 ? 'Critical Scam Vector' : 'Suspicious Message',
+        evidence: res.threat_indicators ? res.threat_indicators.map(ind => ind.description) : [],
+        explanation: `Our machine learning model analyzed this message and detected a ${res.risk_level.toLowerCase()} risk of social engineering. The content scored ${res.risk_score}% on our phishing classifier.`,
+        action: res.recommendations && res.recommendations.length > 0 ? res.recommendations[0] : (res.risk_score > 50 ? 'Delete the text immediately. Do not click any links.' : 'No action required.'),
+        tips: (res.recommendations ? res.recommendations.slice(1) : []).concat([
+          'Never share one-time passcodes (OTP) or personal security pins.',
+          'Always verify the identity of the sender through official channels.'
+        ])
       });
-    }, 1800);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to analyze SMS. Server might be offline.');
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   return (
@@ -48,12 +60,22 @@ export default function SmsAnalyzerPage() {
       </div>
 
       {/* Input Area */}
-      <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="glass-card floating-card-subtle" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', gap: 16, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 16 }}>
-          <button className="btn-pub btn-pub-ghost" style={{ flex: 1, border: '1px dashed var(--border-subtle)' }}>
+          <button 
+            type="button"
+            className="btn-pub btn-pub-ghost" 
+            style={{ flex: 1, border: '1px dashed var(--border-subtle)' }}
+            onClick={() => navigate('/dashboard/screenshot-scanner')}
+          >
              Upload Screenshot
           </button>
-          <button className="btn-pub btn-pub-ghost" style={{ flex: 1, border: '1px dashed var(--border-subtle)' }}>
+          <button 
+            type="button"
+            className="btn-pub btn-pub-ghost" 
+            style={{ flex: 1, border: '1px dashed var(--border-subtle)' }}
+            onClick={handlePasteClipboard}
+          >
              Paste from Clipboard
           </button>
         </div>
@@ -80,13 +102,14 @@ export default function SmsAnalyzerPage() {
 
       {/* Results Section */}
       {result && (
-        <div className="glass-card" style={{ padding: 32, animation: 'fadeIn 0.5s ease', border: '1px solid rgba(255,55,95,0.3)' }}>
+        <div className="glass-card floating-glow" style={{ padding: 32, animation: 'fadeIn 0.5s ease', border: `1px solid ${result.threatScore > 50 ? 'rgba(255,55,95,0.3)' : 'rgba(50,215,75,0.3)'}` }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 28 }}></span> Critical Threat
+                <span>{result.threatScore > 75 ? '🚨' : result.threatScore > 50 ? '⚠️' : '✅'}</span> 
+                {result.threatScore > 75 ? 'Critical Threat' : result.threatScore > 50 ? 'Suspicious Message' : 'Message Appears Clean'}
               </h2>
-              <div style={{ fontSize: 16, color: 'var(--accent-red)', fontWeight: 600, marginTop: 8 }}>{result.category}</div>
+              <div style={{ fontSize: 16, color: result.threatScore > 50 ? 'var(--accent-red)' : 'var(--accent-green)', fontWeight: 600, marginTop: 8 }}>{result.category}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
@@ -97,8 +120,8 @@ export default function SmsAnalyzerPage() {
                   Threat Score
                 </InfoTooltip>
               </div>
-              <div style={{ fontSize: 36, fontWeight: 800, color: 'var(--accent-red)' }}>{result.threatScore}<span style={{ fontSize: 18, color: 'var(--text-muted)' }}>/100</span></div>
-              <div style={{ fontSize: 12, color: 'var(--accent-red)' }}>Confidence: {result.confidence}</div>
+              <div style={{ fontSize: 36, fontWeight: 800, color: result.threatScore > 50 ? 'var(--accent-red)' : 'var(--accent-green)' }}>{result.threatScore}<span style={{ fontSize: 18, color: 'var(--text-muted)' }}>/100</span></div>
+              <div style={{ fontSize: 12, color: result.threatScore > 50 ? 'var(--accent-red)' : 'var(--accent-green)' }}>Confidence: {result.confidence}</div>
             </div>
           </div>
 

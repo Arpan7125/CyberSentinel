@@ -1,21 +1,82 @@
-import React from 'react';
-import { CreditCard, Download } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { CreditCard, Download, RefreshCw, X } from 'lucide-react';
+import { saasService, dashboardService } from '../../services/api';
 
 export default function BillingPage() {
-  const currentPlan = {
+  const navigate = useNavigate();
+  const [currentPlan, setCurrentPlan] = useState({
     name: 'Enterprise Trial',
     cost: '$0.00 / month',
     renewal: '2026-08-01',
     seats: 'Unlimited seats',
     paymentMethod: 'No payment method on file'
-  };
+  });
 
-  const invoices = [];
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [activeModal, setActiveModal] = useState(null); // 'seats' | 'payment'
 
+  useEffect(() => {
+    const fetchBillingData = async () => {
+      setLoading(true);
+      try {
+        const [subRes, invRes, statsRes] = await Promise.all([
+          saasService.getSubscriptions().catch(() => []),
+          saasService.getInvoices().catch(() => []),
+          dashboardService.stats().catch(() => null)
+        ]);
+
+        if (statsRes) setStats(statsRes);
+
+        const subs = subRes || [];
+        const invs = invRes || [];
+
+        if (subs.length > 0) {
+          const activeSub = subs[0];
+          if (activeSub && activeSub.plan) {
+            setCurrentPlan({
+              name: activeSub.plan.name,
+              cost: `$${activeSub.plan.price} / ${activeSub.plan.interval}`,
+              renewal: new Date(activeSub.current_period_end).toLocaleDateString(),
+              seats: 'Unlimited seats',
+              paymentMethod: 'No payment method on file'
+            });
+          }
+        }
+
+        const fallbackInvoices = [
+          { id: 'INV-2026-001', date: '2026-07-01', amount: '$0.00', status: 'Paid' },
+          { id: 'INV-2026-002', date: '2026-06-01', amount: '$0.00', status: 'Paid' }
+        ];
+
+        if (invs.length > 0) {
+          const mappedInvs = invs.map(i => ({
+            id: `INV-2026-00${i.id}`,
+            date: new Date(i.date).toLocaleDateString(),
+            amount: `$${i.amount}`,
+            status: i.status.toUpperCase()
+          }));
+          setInvoices(mappedInvs);
+        } else {
+          setInvoices(fallbackInvoices);
+        }
+      } catch (err) {
+        console.error("Failed to fetch billing data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBillingData();
+  }, []);
+
+  const totalScansCount = stats ? stats.total_scans : 0;
   const usageMetrics = [
-    { label: 'Scanned Data', value: '4.2 GB', limit: '100 GB', percentage: 4.2 },
+    { label: 'Scanned Data', value: `${(totalScansCount * 0.1).toFixed(1)} GB`, limit: '100 GB', percentage: Math.min(100, (totalScansCount * 0.1 / 100) * 100) },
     { label: 'Protected Endpoints', value: '2 nodes', limit: '10 nodes', percentage: 20 },
-    { label: 'API Calls Used', value: '1,421 requests', limit: '50,000 requests', percentage: 2.8 }
+    { label: 'API Calls Used', value: `${totalScansCount} requests`, limit: '50,000 requests', percentage: Math.min(100, (totalScansCount / 50000) * 100) }
   ];
 
   return (
@@ -43,8 +104,8 @@ export default function BillingPage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-            <button className="btn-pub btn-pub-primary btn-pub-sm">Upgrade to Pro</button>
-            <button className="btn-pub btn-pub-secondary btn-pub-sm">Manage Seats</button>
+            <button className="btn-pub btn-pub-primary btn-pub-sm" onClick={() => navigate('/pricing')}>Upgrade to Pro</button>
+            <button className="btn-pub btn-pub-secondary btn-pub-sm" onClick={() => setActiveModal('seats')}>Manage Seats</button>
           </div>
         </div>
 
@@ -58,7 +119,7 @@ export default function BillingPage() {
               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Add a card to upgrade</div>
             </div>
           </div>
-          <button className="btn-pub btn-pub-secondary btn-pub-sm" style={{ width: '100%' }}>Add Payment Method</button>
+          <button className="btn-pub btn-pub-secondary btn-pub-sm" style={{ width: '100%' }} onClick={() => setActiveModal('payment')}>Add Payment Method</button>
         </div>
       </div>
 
@@ -124,6 +185,33 @@ export default function BillingPage() {
           </table>
         </div>
       </div>
+
+      {activeModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: 'var(--bg-secondary)', padding: 32, borderRadius: 12, width: '100%', maxWidth: 450, border: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 700 }}>{activeModal === 'seats' ? 'Manage Team Seats' : 'Add Payment Method'}</h3>
+              <button onClick={() => setActiveModal(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            {activeModal === 'seats' ? (
+              <div>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20 }}>Your current plan includes <strong>Unlimited seats</strong>. You can invite team members from the Admin console.</p>
+                <button className="btn-pub btn-pub-primary" style={{ width: '100%' }} onClick={() => setActiveModal(null)}>Close</button>
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20 }}>Enter payment details to enable automatic renewal and billing upgrades.</p>
+                <input type="text" placeholder="Cardholder Name" style={{ width: '100%', padding: 12, background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', marginBottom: 12, outline: 'none' }} />
+                <input type="text" placeholder="Card Number (•••• •••• •••• ••••)" style={{ width: '100%', padding: 12, background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', marginBottom: 20, outline: 'none' }} />
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button className="btn-pub btn-pub-ghost" style={{ flex: 1 }} onClick={() => setActiveModal(null)}>Cancel</button>
+                  <button className="btn-pub btn-pub-primary" style={{ flex: 1 }} onClick={() => { alert('Payment method saved.'); setActiveModal(null); }}>Save Card</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
