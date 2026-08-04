@@ -20,59 +20,22 @@ export default function AwarenessCenter() {
   const [submitted, setSubmitted] = useState(false);
   const [quizFinished, setQuizFinished] = useState(false);
 
+  const [loadError, setLoadError] = useState('');
+
   const fetchQuestions = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
-      const response = await fetch('http://localhost:8000/api/quiz/');
+      const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+      const response = await fetch(`${API}/quiz/`);
       if (!response.ok) {
         throw new Error('Failed to load quiz');
       }
       const data = await response.json();
       setQuestions(data);
     } catch (err) {
-      console.warn("Backend unavailable. Loading offline security training simulation data...", err);
-      setQuestions([
-        {
-          "id": 1,
-          "scenario_name": "IRS Tax Refund SMS Alert",
-          "sender": "+1 (800) 492-9102",
-          "subject": "SMS Text Message",
-          "body": "IRS Alert: We detected an unpaid tax refund of $432.10 under your name. Claim your tax credit now by filling this secure form: http://irs-tax-refund-portal.org",
-          "is_phishing": true,
-          "explanation": "This is a typical tax phishing scam. The IRS never contacts taxpayers via text message to request bank details or offer refunds. Additionally, the domain 'irs-tax-refund-portal.org' is fake; the official IRS domain is irs.gov.",
-          "clues": ["irs-tax-refund-portal.org", "refund of $432.10", "Claim your tax credit now"]
-        },
-        {
-          "id": 2,
-          "scenario_name": "Netflix Billing Issue Email",
-          "sender": "billing-support@netflix-alerts-billing.com",
-          "subject": "Action Required: Update payment card immediately",
-          "body": "Dear Netflix Member, your monthly subscription payment failed. We will suspend your service in 24 hours if payment is not updated. Click here to confirm billing profile details: http://netflix-payment-check.net/billing",
-          "is_phishing": true,
-          "explanation": "This email uses a generic greeting ('Dear Netflix Member') instead of your name, creates artificial urgency (24 hours), and uses a spoofed domain 'netflix-alerts-billing.com' and destination link 'netflix-payment-check.net' instead of official netflix.com.",
-          "clues": ["netflix-alerts-billing.com", "suspend your service in 24 hours", "netflix-payment-check.net"]
-        },
-        {
-          "id": 3,
-          "scenario_name": "Company IT Team Software Update",
-          "sender": "it-support@corporatesecurity-hub.com",
-          "subject": "Mandatory Security Upgrade for Slack Portal",
-          "body": "Hi team, we are upgrading our internal Slack client security protocols. Please download the patch executable from our secure engineering file store and run it immediately: http://internal-engineering-shares.info/slack_patch.exe",
-          "is_phishing": true,
-          "explanation": "This is an internal spear-phishing attack attempting to distribute malware. IT support will rarely ask you to run an arbitrary executable file from an external '.info' domain. Always confirm software updates with your administrators first.",
-          "clues": ["slack_patch.exe", "corporatesecurity-hub.com", "internal-engineering-shares.info"]
-        },
-        {
-          "id": 4,
-          "scenario_name": "Amazon Package Delivery Confirm",
-          "sender": "auto-confirm@amazon.com",
-          "subject": "Your Amazon order #409-918274-12847 has shipped",
-          "body": "Hello Joshua, thanks for shopping. Your order was successfully packed and shipped. You can trace its shipment status securely on your official Amazon portal dashboard or mobile app.",
-          "is_phishing": false,
-          "explanation": "This is a legitimate order notification. The sender domain matches amazon.com, it uses the recipient's actual name, it provides a realistic order tracking number, and it does not link to any suspicious external portals.",
-          "clues": []
-        }
-      ]);
+      setQuestions([]);
+      setLoadError('Could not load the training quiz right now. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -127,6 +90,16 @@ export default function AwarenessCenter() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 16 }}>
         <RefreshCw className="spinner" style={{ width: 24, height: 24 }} />
         <span style={{ color: 'var(--text-secondary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Loading simulation bank...</span>
+      </div>
+    );
+  }
+
+  if (loadError || questions.length === 0) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: 16, textAlign: 'center' }}>
+        <AlertTriangle size={28} style={{ color: 'var(--accent-orange)' }} />
+        <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{loadError || 'No training scenarios available yet.'}</span>
+        <button className="btn-pub btn-pub-secondary btn-pub-sm" onClick={fetchQuestions}>Retry</button>
       </div>
     );
   }

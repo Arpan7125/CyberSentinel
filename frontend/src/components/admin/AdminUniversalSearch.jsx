@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAdminWorkspace } from '../../contexts/AdminWorkspaceContext';
-import { MOCK_ADMIN_DATA } from '../../data/AdminDataMock';
+import { adminService, supportService, saasService } from '../../services/api';
 
 export default function AdminUniversalSearch() {
   const { searchOpen, setSearchOpen, searchQuery, setSearchQuery, setSelectedItemId, setActiveModule } = useAdminWorkspace();
   const inputRef = useRef(null);
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (searchOpen && inputRef.current) {
@@ -12,37 +14,50 @@ export default function AdminUniversalSearch() {
     }
   }, [searchOpen]);
 
+  // Live search against real backend data — debounced, no fabricated results.
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) { setResults([]); return; }
+
+    setLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const [users, tickets, scamReports] = await Promise.all([
+          adminService.getUsers().catch(() => []),
+          supportService.getTickets().catch(() => []),
+          saasService.getScamReports().catch(() => []),
+        ]);
+
+        const userList = Array.isArray(users) ? users : (users?.results || []);
+        const ticketList = Array.isArray(tickets) ? tickets : (tickets?.results || []);
+        const reportList = Array.isArray(scamReports) ? scamReports : (scamReports?.results || []);
+
+        const found = [];
+        userList.forEach(u => {
+          if ((u.username || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)) {
+            found.push({ id: u.id, _module: 'users', _title: u.username, _desc: `User - ${u.email}` });
+          }
+        });
+        ticketList.forEach(t => {
+          if ((t.subject || '').toLowerCase().includes(q) || (t.category || '').toLowerCase().includes(q)) {
+            found.push({ id: t.id, _module: 'tickets', _title: t.subject, _desc: `Ticket - ${t.status}` });
+          }
+        });
+        reportList.forEach(r => {
+          if ((r.url_or_email || '').toLowerCase().includes(q)) {
+            found.push({ id: r.id, _module: 'scam-reports', _title: r.url_or_email, _desc: `Scam Report - ${r.status}` });
+          }
+        });
+        setResults(found.slice(0, 10));
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   if (!searchOpen) return null;
-
-  const getResults = () => {
-    if (!searchQuery.trim()) return [];
-    const q = searchQuery.toLowerCase();
-    
-    const results = [];
-    MOCK_ADMIN_DATA.inbox.forEach(item => {
-      if (item.subject.toLowerCase().includes(q) || item.sender.toLowerCase().includes(q)) {
-        results.push({ ...item, _module: 'inbox', _title: item.subject, _desc: `Inbox - From ${item.sender}` });
-      }
-    });
-    MOCK_ADMIN_DATA.users.forEach(item => {
-      if (item.name.toLowerCase().includes(q) || item.email.toLowerCase().includes(q)) {
-        results.push({ ...item, _module: 'users', _title: item.name, _desc: `User - ${item.email}` });
-      }
-    });
-    MOCK_ADMIN_DATA.aiChats?.forEach(item => {
-      if (item.topic.toLowerCase().includes(q) || item.user.toLowerCase().includes(q)) {
-        results.push({ ...item, _module: 'ai-chats', _title: item.topic, _desc: `AI Chat - ${item.user}` });
-      }
-    });
-    MOCK_ADMIN_DATA.auditLogs?.forEach(item => {
-      if (item.action.toLowerCase().includes(q) || item.admin.toLowerCase().includes(q) || item.ip.toLowerCase().includes(q)) {
-        results.push({ ...item, _module: 'logs', _title: item.action, _desc: `Log - ${item.admin} on ${item.ip}` });
-      }
-    });
-    return results.slice(0, 10);
-  };
-
-  const results = getResults();
 
   const handleSelect = (result) => {
     setActiveModule(result._module);
@@ -58,49 +73,31 @@ export default function AdminUniversalSearch() {
           ref={inputRef}
           type="text" 
           className="admin-ws-search-input"
-          placeholder="Ask AI Copilot or search for users, tickets, IP addresses..."
+          placeholder="Search users, tickets, scam reports..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           onKeyDown={e => {
             if (e.key === 'Escape') setSearchOpen(false);
           }}
         />
-        
+
         {searchQuery && (
           <div className="admin-ws-search-results">
-            {/* AI Assistant Hook */}
-            <div 
-              className="admin-ws-search-result ai-hook" 
-              style={{ borderBottom: '1px solid rgba(175,82,222,0.2)', background: 'rgba(175,82,222,0.05)' }}
-              onClick={() => {
-                // Mock applying an AI filter
-                alert(`AI Copilot is analyzing query: "${searchQuery}" and will apply relevant filters.`);
-                setSearchOpen(false);
-                setSearchQuery('');
-              }}
-            >
-              <div style={{ fontSize: 20 }}>✨</div>
-              <div>
-                <div className="admin-ws-search-result-title" style={{ color: '#AF52DE' }}>Ask AI Copilot: "{searchQuery}"</div>
-                <div className="admin-ws-search-result-desc">Press Enter to parse intent, apply filters, and analyze data.</div>
-              </div>
+            <div style={{ padding: '12px 16px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
+              {loading ? 'Searching…' : 'Database Results'}
             </div>
 
-            <div style={{ padding: '12px 16px', fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>
-              Database Results
-            </div>
-            
             {results.length > 0 ? results.map(res => (
-              <div key={res.id} className="admin-ws-search-result" onClick={() => handleSelect(res)}>
+              <div key={`${res._module}-${res.id}`} className="admin-ws-search-result" onClick={() => handleSelect(res)}>
                 <div style={{ fontSize: 18, color: 'var(--text-muted)' }}>
-                  {res._module === 'inbox' ? '✉️' : res._module === 'ai-chats' ? '🤖' : res._module === 'logs' ? '📋' : '👤'}
+                  {res._module === 'tickets' ? '🎫' : res._module === 'scam-reports' ? '🚩' : '👤'}
                 </div>
                 <div>
                   <div className="admin-ws-search-result-title">{res._title}</div>
                   <div className="admin-ws-search-result-desc">{res._desc}</div>
                 </div>
               </div>
-            )) : (
+            )) : !loading && (
               <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                 No database records found matching "{searchQuery}"
               </div>

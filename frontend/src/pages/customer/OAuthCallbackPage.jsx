@@ -14,8 +14,9 @@ const SYNC_STEPS = [
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const providerId = searchParams.get('provider');
-  const code = searchParams.get('mock_code') || searchParams.get('code');
+  const rawState = searchParams.get('state') || '';
+  const providerId = searchParams.get('provider') || rawState.split(':')[0];
+  const code = searchParams.get('code');
   
   const [currentStep, setCurrentStep] = useState(0);
   const [error, setError] = useState(null);

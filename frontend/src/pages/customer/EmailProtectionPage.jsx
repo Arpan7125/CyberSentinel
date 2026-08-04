@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, RefreshCw } from 'lucide-react';
-import { integrationsService } from '../../services/api';
+import { integrationsService, saasService } from '../../services/api';
 
 export default function EmailProtectionPage() {
   const [isConnected, setIsConnected] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [connectError, setConnectError] = useState('');
 
   const fetchEmails = async () => {
     setLoading(true);
     try {
-      // Import Gmail emails (using simulated feed fallback)
-      const res = await integrationsService.importGmail(true);
+      const res = await integrationsService.importGmail();
       const backendEmails = res.emails || [];
 
       // Map backend emails to frontend expected structure
@@ -31,12 +31,12 @@ export default function EmailProtectionPage() {
           isPhishing: e.risk_score > 50,
           riskScore: e.risk_score,
           analysis: {
-            spf: e.risk_score > 75 ? 'Fail' : 'Pass',
-            dkim: e.risk_score > 75 ? 'Fail' : 'Pass',
-            dmarc: e.risk_score > 75 ? 'Fail' : 'Pass',
-            domainAge: e.risk_score > 75 ? '3 days old' : '10 years old',
+            // Real values parsed from the email's Authentication-Results header (backend/api/integrations_views.py).
+            spf: e.spf || 'Unavailable',
+            dkim: e.dkim || 'Unavailable',
+            dmarc: e.dmarc || 'Unavailable',
             urgency: e.risk_score > 75 ? 'High' : 'Low',
-            aiSummary: e.threat_indicators ? e.threat_indicators.map(ind => ind.description).join(' ') : 'No threats detected in this email content.'
+            aiSummary: e.threat_indicators?.length ? e.threat_indicators.map(ind => ind.description).join(' ') : 'No threats detected in this email content.'
           }
         };
       });
@@ -71,12 +71,16 @@ export default function EmailProtectionPage() {
 
   const handleConnect = async () => {
     setLoading(true);
+    setConnectError('');
     try {
-      setIsConnected(true);
-      await fetchEmails();
+      const providers = await integrationsService.getProviders();
+      const gmail = providers?.find((p) => p.name === 'Gmail');
+      if (!gmail) throw new Error('Gmail provider is not configured on the server.');
+
+      const { auth_url } = await integrationsService.startOAuth(gmail.id);
+      window.location.href = auth_url; // Redirects to Google's real consent screen.
     } catch (err) {
-      console.error(err);
-    } finally {
+      setConnectError(err.data?.error || err.message || 'Failed to start Gmail connection.');
       setLoading(false);
     }
   };
@@ -138,25 +142,31 @@ export default function EmailProtectionPage() {
         </p>
 
         <div style={{ display: 'flex', gap: 16, flexDirection: 'column', width: '100%', maxWidth: 300 }}>
-          <button 
-            className="btn-pub" 
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#fff', color: '#000' }}
+          <button
+            className="btn-pub"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#fff', color: '#000', opacity: loading ? 0.6 : 1 }}
             onClick={handleConnect}
+            disabled={loading}
           >
             <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="Google" style={{ width: 18 }} />
-            Connect Google Workspace
+            {loading ? 'Redirecting to Google…' : 'Connect Gmail'}
           </button>
-          
-          <button 
-            className="btn-pub" 
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#0078D4', color: 'var(--text-primary)' }}
-            onClick={handleConnect}
+
+          <button
+            className="btn-pub"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, background: '#0078D4', color: 'var(--text-primary)', opacity: 0.5, cursor: 'not-allowed' }}
+            disabled
+            title="Microsoft 365 isn't connected to a real OAuth flow yet"
           >
             <svg width="18" height="18" viewBox="0 0 21 21"><path fill="#f25022" d="M0 0h10v10H0z"/><path fill="#7fba00" d="M11 0h10v10H11z"/><path fill="#00a4ef" d="M0 11h10v10H0z"/><path fill="#ffb900" d="M11 11h10v10H11z"/></svg>
-            Connect Microsoft 365
+            Connect Microsoft 365 (Coming Soon)
           </button>
         </div>
-        
+
+        {connectError && (
+          <p style={{ fontSize: 13, color: 'var(--accent-red)', marginTop: 16, maxWidth: 400 }}>{connectError}</p>
+        )}
+
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 24 }}>
           We request read-only access. CyberSentinel never stores or sells your private messages.
         </p>
@@ -254,14 +264,10 @@ export default function EmailProtectionPage() {
 
             <div style={{ flex: 1, overflowY: 'auto', padding: 32, display: 'flex', gap: 32 }}>
               
-              {/* Message Body Simulation */}
+              {/* Real email snippet returned by the Gmail API */}
               <div style={{ flex: 2, background: 'var(--bg-secondary)', padding: 24, borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
                 <div style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text-secondary)' }}>
                   {selectedEmail.snippet}
-                  <br/><br/>
-                  <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 4, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                    [Simulated Email Body Render]
-                  </div>
                 </div>
               </div>
 
@@ -281,19 +287,15 @@ export default function EmailProtectionPage() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>SPF</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: selectedEmail.analysis.spf === 'Pass' ? 'var(--accent-green)' : 'var(--accent-red)' }}>{selectedEmail.analysis.spf}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: selectedEmail.analysis.spf === 'Pass' ? 'var(--accent-green)' : selectedEmail.analysis.spf === 'Fail' ? 'var(--accent-red)' : 'var(--text-muted)' }}>{selectedEmail.analysis.spf}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>DKIM</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: selectedEmail.analysis.dkim === 'Pass' ? 'var(--accent-green)' : 'var(--accent-red)' }}>{selectedEmail.analysis.dkim}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: selectedEmail.analysis.dkim === 'Pass' ? 'var(--accent-green)' : selectedEmail.analysis.dkim === 'Fail' ? 'var(--accent-red)' : 'var(--text-muted)' }}>{selectedEmail.analysis.dkim}</div>
                     </div>
                     <div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>DMARC</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: selectedEmail.analysis.dmarc === 'Pass' ? 'var(--accent-green)' : 'var(--accent-red)' }}>{selectedEmail.analysis.dmarc}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Domain Age</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedEmail.analysis.domainAge}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: selectedEmail.analysis.dmarc === 'Pass' ? 'var(--accent-green)' : selectedEmail.analysis.dmarc === 'Fail' ? 'var(--accent-red)' : 'var(--text-muted)' }}>{selectedEmail.analysis.dmarc}</div>
                     </div>
                   </div>
                 </div>

@@ -17,7 +17,7 @@ export default function FileScannerPage() {
     }
   };
 
-  const simulateScan = async () => {
+  const runScan = async () => {
     if (!file) return;
     setIsScanning(true);
     setProgress(0);
@@ -46,8 +46,7 @@ export default function FileScannerPage() {
     } catch (err) {
       clearInterval(interval);
       setIsScanning(false);
-      console.error(err);
-      alert('Failed to analyze file. Server might be down.');
+      alert(err.data?.error || err.message || 'Failed to analyze file.');
     }
   };
 
@@ -123,7 +122,7 @@ export default function FileScannerPage() {
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
             <button className="btn-pub btn-pub-ghost" onClick={reset}>Cancel</button>
-            <button className="btn-pub btn-pub-primary" onClick={simulateScan}>Scan File</button>
+            <button className="btn-pub btn-pub-primary" onClick={runScan}>Scan File</button>
           </div>
         </div>
       )}

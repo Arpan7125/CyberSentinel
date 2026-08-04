@@ -47,61 +47,35 @@ export default function ApiSandbox() {
 
   const handleTriggerApi = async () => {
     setLoading(true);
+    setJsonResponse(null);
+    const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
     try {
-      let response;
-      if (selectedEndpoint === 'text') {
-        const bodyObj = JSON.parse(payloadText);
-        response = await fetch('http://localhost:8000/api/analyze/text/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyObj)
+      if (selectedEndpoint === 'screenshot') {
+        // This simplified sandbox only sends JSON bodies; the real endpoint needs a
+        // multipart file upload. Say so honestly instead of calling an unrelated
+        // endpoint and passing off its response as a screenshot result.
+        setJsonResponse({
+          "note": "This endpoint requires a multipart file upload and can't be triggered from this JSON-only sandbox. Use the curl/JS/Python snippet on the right with a real image file, or try it from the Screenshot Analyzer page."
         });
-      } else if (selectedEndpoint === 'url') {
-        const bodyObj = JSON.parse(payloadText);
-        response = await fetch('http://localhost:8000/api/analyze/url/', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(bodyObj)
-        });
-      } else {
-        response = await fetch('http://localhost:8000/api/dashboard/stats/');
+        return;
       }
 
+      const bodyObj = JSON.parse(payloadText);
+      const path = selectedEndpoint === 'text' ? '/analyze/text/' : '/analyze/url/';
+      const response = await fetch(`${API}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj)
+      });
+
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error('API request failed');
+        throw new Error(data?.error || `Request failed (${response.status})`);
       }
-      const data = await response.json();
       setJsonResponse(data);
     } catch (err) {
-      console.warn("Backend API offline. Loading simulated JSON API responses...", err);
-      if (selectedEndpoint === 'text') {
-        setJsonResponse({
-          "risk_score": 86.5,
-          "risk_level": "Critical",
-          "threat_indicators": [
-            { "type": "Urgency", "severity": "High", "description": "Linguistic deadline pressure detected." }
-          ],
-          "highlighted_words": [
-            { "word": "urgent", "severity": "high", "weight": 1.5, "reason": "Scam urgency marker." }
-          ],
-          "recommendations": ["Do not click hyperlinks.", "Verify sender identity."]
-        });
-      } else if (selectedEndpoint === 'url') {
-        setJsonResponse({
-          "risk_score": 95.0,
-          "risk_level": "Critical",
-          "threat_indicators": [
-            { "type": "Brand Spoofing", "severity": "Critical", "description": "Mimics PayPal services." }
-          ],
-          "details": { "domain": "paypa1-security-verification.xyz", "has_https": false, "brand_spoofing": true },
-          "recommendations": ["Blocklist domain.", "Close browser page."]
-        });
-      } else {
-        setJsonResponse({
-          "message": "Screenshot sandbox requires file uploads. Extracted text is channeled to text scanners.",
-          "simulated_extracted_content": "URGENT netflix billing failed http://netflix-billing-update.com"
-        });
-      }
+      setJsonResponse({ error: err.message || 'Request failed — is the backend running?' });
     } finally {
       setLoading(false);
     }

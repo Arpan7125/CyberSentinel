@@ -15,9 +15,7 @@ export default function SettingsPage() {
     setTheme(newTheme);
     localStorage.setItem('cs_theme', newTheme);
     document.body.className = '';
-    if (newTheme !== 'amber') {
-      document.body.classList.add(`theme-${newTheme}`);
-    }
+    document.body.classList.add(`theme-${newTheme}`);
   };
 
   const handleDeleteAccount = async () => {

@@ -1,32 +1,59 @@
-import React, { useState } from 'react';
-import { useAuth } from '../../AuthContext';
+import React, { useState, useEffect, useCallback } from 'react';
+import { securityService } from '../../services/api';
 
 export default function SecurityPage() {
-  const { loginHistory, deviceSessions, revokeSession } = useAuth();
-  
-  // API Keys state mockup
-  const [apiKeys, setApiKeys] = useState([
-    { id: 'key-1', name: 'Production SIEM API', prefix: 'cs_live_3f92...', created: '2026-05-12' },
-    { id: 'key-2', name: 'Dev Endpoint Sandbox', prefix: 'cs_test_8a11...', created: '2026-06-01' }
-  ]);
+  const [apiKeys, setApiKeys] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [loginHistory, setLoginHistory] = useState([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
 
-  const handleGenerateKey = (e) => {
+  const loadAll = useCallback(async () => {
+    try {
+      const [keys, sess, history] = await Promise.all([
+        securityService.getApiKeys(),
+        securityService.getSessions(),
+        securityService.getLoginHistory(),
+      ]);
+      setApiKeys(keys || []);
+      setSessions(sess || []);
+      setLoginHistory(history || []);
+    } catch (err) {
+      console.error('Failed to load security data:', err);
+    }
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const handleGenerateKey = async (e) => {
     e.preventDefault();
     if (!newKeyName.trim()) return;
-    const secureRandomHex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    const fullKey = `cs_live_${secureRandomHex}`;
-    setGeneratedKey(fullKey);
-    setApiKeys(prev => [
-      ...prev,
-      { id: `key-${Date.now()}`, name: newKeyName, prefix: `${fullKey.slice(0, 12)}...`, created: new Date().toISOString().split('T')[0] }
-    ]);
-    setNewKeyName('');
+    try {
+      const res = await securityService.createApiKey(newKeyName.trim());
+      setGeneratedKey(res.full_key);
+      setApiKeys((prev) => [res.key, ...prev]);
+      setNewKeyName('');
+    } catch (err) {
+      alert(err.data?.error || err.message || 'Failed to generate API key.');
+    }
   };
 
-  const handleRevokeKey = (id) => {
-    setApiKeys(prev => prev.filter(k => k.id !== id));
+  const handleRevokeKey = async (id) => {
+    try {
+      await securityService.revokeApiKey(id);
+      setApiKeys((prev) => prev.filter((k) => k.id !== id));
+    } catch (err) {
+      alert(err.data?.error || err.message || 'Failed to revoke key.');
+    }
+  };
+
+  const handleRevokeSession = async (id) => {
+    try {
+      await securityService.revokeSession(id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      alert(err.data?.error || err.message || 'Failed to revoke session.');
+    }
   };
 
   return (
@@ -64,7 +91,6 @@ export default function SecurityPage() {
                 className="btn-pub btn-pub-secondary btn-pub-sm"
                 onClick={() => {
                   navigator.clipboard.writeText(generatedKey);
-                  alert('Copied to clipboard');
                 }}
               >
                 Copy
@@ -104,11 +130,13 @@ export default function SecurityPage() {
               </tr>
             </thead>
             <tbody>
-              {apiKeys.map(k => (
+              {apiKeys.length === 0 ? (
+                <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-secondary)' }}>No API keys yet.</td></tr>
+              ) : apiKeys.map(k => (
                 <tr key={k.id}>
                   <td style={{ fontWeight: 650 }}>{k.name}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{k.prefix}</td>
-                  <td>{k.created}</td>
+                  <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{k.prefix}...</td>
+                  <td>{new Date(k.created_at).toLocaleDateString()}</td>
                   <td>
                     <button
                       className="btn-pub btn-pub-ghost btn-pub-sm"
@@ -134,24 +162,26 @@ export default function SecurityPage() {
               <tr>
                 <th>Device Node</th>
                 <th>IP Address</th>
-                <th>Activity Rating</th>
+                <th>Last Active</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody>
-              {deviceSessions.map(sess => (
+              {sessions.length === 0 ? (
+                <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text-secondary)' }}>No active sessions recorded yet.</td></tr>
+              ) : sessions.map(sess => (
                 <tr key={sess.id}>
-                  <td style={{ fontWeight: 650 }}>
-                    {sess.device} {sess.current && <span className="status-badge status-active" style={{ fontSize: 9, padding: '2px 8px', marginLeft: 8 }}><span className="status-badge-dot" /> Current</span>}
+                  <td style={{ fontWeight: 650, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {sess.device_name} {sess.is_current && <span className="status-badge status-active" style={{ fontSize: 9, padding: '2px 8px', marginLeft: 8 }}><span className="status-badge-dot" /> Current</span>}
                   </td>
-                  <td>{sess.ip}</td>
-                  <td>{sess.lastActive}</td>
+                  <td>{sess.ip_address}</td>
+                  <td>{new Date(sess.last_active).toLocaleString()}</td>
                   <td>
-                    {!sess.current && (
+                    {!sess.is_current && (
                       <button
                         className="btn-pub btn-pub-secondary btn-pub-sm"
                         style={{ color: 'var(--accent-red)' }}
-                        onClick={() => revokeSession(sess.id)}
+                        onClick={() => handleRevokeSession(sess.id)}
                       >
                         Terminate
                       </button>
@@ -188,8 +218,8 @@ export default function SecurityPage() {
                 loginHistory.map(h => (
                   <tr key={h.id}>
                     <td>{new Date(h.timestamp).toLocaleString()}</td>
-                    <td>{h.ip}</td>
-                    <td>{h.device}</td>
+                    <td>{h.ip_address}</td>
+                    <td style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.device_info}</td>
                     <td>
                       <span className={`status-badge ${h.success ? 'status-active' : 'status-danger'}`}>
                         <span className="status-badge-dot" />

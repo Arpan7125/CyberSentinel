@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
+import { useSocket } from './hooks/useSocket';
 
 const NotificationContext = createContext(null);
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -21,21 +22,28 @@ export function NotificationProvider({ children }) {
         setNotifications(Array.isArray(data?.results) ? data.results : (Array.isArray(data) ? data : []));
       }
     } catch {
-      // Mock notifications fallback
-      setNotifications([
-        { id: 1, title: 'Welcome to CyberSentinel', message: 'Explore scanners and platform security guidelines.', notification_type: 'General', is_read: false, created_at: new Date().toISOString() }
-      ]);
+      // Real fetch failed — leave existing state as-is rather than showing a fabricated notification.
     } finally {
       setLoading(false);
     }
   }, [token]);
 
+  // Initial load only — live updates arrive over the WebSocket below.
+  // The socket auto-reconnects, but if it's ever down for a stretch this
+  // periodic refresh is the fallback so notifications don't go stale.
   useEffect(() => {
     fetchNotifications();
-    // Poll notifications every 60 seconds
-    const interval = setInterval(fetchNotifications, 60000);
+    const interval = setInterval(fetchNotifications, 120000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
+
+  const { connected: notificationsLive } = useSocket('/ws/notifications/', {
+    token,
+    enabled: !!token,
+    onMessage: (notification) => {
+      setNotifications((prev) => [notification, ...prev.filter((n) => n.id !== notification.id)]);
+    },
+  });
 
   const markAsRead = async (id) => {
     try {
@@ -80,6 +88,7 @@ export function NotificationProvider({ children }) {
       notifications,
       unreadCount,
       loading,
+      notificationsLive,
       fetchNotifications,
       markAsRead,
       markAllAsRead,

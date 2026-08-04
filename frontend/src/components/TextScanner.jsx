@@ -55,51 +55,16 @@ export default function TextScanner({ onScanComplete }) {
     if (!text.trim()) return;
 
     setLoading(true);
+    setResult(null);
     try {
       const data = await scanService.analyzeText({ text });
       setResult(data);
       setCheckedRecs({});
       if (onScanComplete) onScanComplete(); // trigger dashboard refresh
     } catch (err) {
-      console.warn("Backend unavailable. Loading offline text classifier mock simulation...", err);
-      const textLower = text.toLowerCase();
-      let mockResult;
-
-      if (textLower.includes("urgent") || textLower.includes("suspend") || textLower.includes("locked") || textLower.includes("billing") || textLower.includes("verify")) {
-        mockResult = {
-          "risk_score": 86.5,
-          "risk_level": "Critical",
-          "threat_indicators": [
-            { "type": "Urgency", "severity": "High", "description": "Urgent language or false deadlines designed to induce panic and force fast action." },
-            { "type": "Credential Harvesting", "severity": "Critical", "description": "Direct requests to confirm identities, reset passwords, or enter login credentials." }
-          ],
-          "highlighted_words": [
-            { "word": "urgent", "severity": "high", "weight": 1.5, "reason": "Scam alert word indicating high urgency." },
-            { "word": "suspend", "severity": "critical", "weight": 2.0, "reason": "High phishing association. Prompts sensitive account locks." },
-            { "word": "verify", "severity": "critical", "weight": 1.8, "reason": "Credential harvesting trigger phrase." }
-          ],
-          "recommendations": [
-            "Do not click on any links in this message.",
-            "Verify the sender's identity through another channel.",
-            "Do not share passwords, pins, or personal data.",
-            "Report this message to your security team."
-          ]
-        };
-      } else {
-        mockResult = {
-          "risk_score": 4.2,
-          "risk_level": "Low",
-          "threat_indicators": [],
-          "highlighted_words": [],
-          "recommendations": [
-            "This message appears to be safe.",
-            "Always exercise caution when responding to unexpected requests.",
-            "Ensure your system antivirus and security definitions are up to date."
-          ]
-        };
-      }
-      setResult(mockResult);
-      setCheckedRecs({});
+      // Honest failure — never fabricate a plausible-looking verdict when the real
+      // classifier call fails. A security tool must not silently lie about a scan result.
+      alert(err.data?.error || err.message || 'Failed to analyze text. Please try again.');
     } finally {
       setLoading(false);
     }

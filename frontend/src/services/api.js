@@ -165,7 +165,16 @@ export const integrationsService = {
   getSyncLogs: (account_id) => api.get(`/integrations/connected/${account_id}/logs/`),
   getConfig: () => api.get('/integrations/config/'),
   saveConfig: (data) => api.post('/integrations/config/', data),
-  importGmail: (simulated = true) => api.post('/integrations/gmail/import/', { simulated }),
+  importGmail: () => api.post('/integrations/gmail/import/', {}),
+};
+
+export const securityService = {
+  getLoginHistory: () => api.get('/security/login-history/'),
+  getSessions: () => api.get('/security/sessions/'),
+  revokeSession: (id) => api.post(`/security/sessions/${id}/revoke/`),
+  getApiKeys: () => api.get('/security/api-keys/'),
+  createApiKey: (name) => api.post('/security/api-keys/', { name }),
+  revokeApiKey: (id) => api.delete(`/security/api-keys/${id}/`),
 };
 
 export const supportService = {

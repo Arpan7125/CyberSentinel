@@ -1,10 +1,10 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
-    ScanLog, QuizQuestion, UserProfile, SupportTicket, 
+    ScanLog, QuizQuestion, UserProfile, SupportTicket,
     TicketReply, Notification, LoginHistory, DeviceSession, AuditLog,
     SubscriptionPlan, UserSubscription, PaymentInvoice, BlogPost, FAQ, TeamMember, ScamReport,
-    JobOpening, CaseStudy, ContactLead
+    JobOpening, CaseStudy, ContactLead, DeveloperApiKey
 )
 
 class UserSerializer(serializers.ModelSerializer):
@@ -60,6 +60,12 @@ class DeviceSessionSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceSession
         fields = '__all__'
+
+class DeveloperApiKeySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DeveloperApiKey
+        fields = ['id', 'name', 'prefix', 'created_at']  # key_hash is never exposed
+
 
 class AuditLogSerializer(serializers.ModelSerializer):
     class Meta:

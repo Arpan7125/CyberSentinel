@@ -101,31 +101,12 @@ export default function Chatbot() {
         ];
       }
     } catch (err) {
-      console.warn("Backend Chat API unavailable, falling back to local knowledge base", err);
-      // Client-side fallback if backend fails or is offline
-      const lowerText = userText.toLowerCase();
-      let matchedIntent = null;
-      for (const intent of KNOWLEDGE_BASE.intents) {
-        if (intent.keywords.some(kw => lowerText.includes(kw))) {
-          matchedIntent = intent;
-          break;
-        }
-      }
-      if (lowerText.startsWith('create ticket') || lowerText.includes('support ticket')) {
-        responseText = lang === 'English'
-          ? "I have successfully initiated a support incident ticket on your dashboard queue."
-          : "सपोर्ट टिकट सफलतापूर्वक बना दिया गया है।";
-        responseActions = [{ label: '🎟️ View Support Tickets', type: 'navigate', path: '/dashboard/tickets' }];
-      } else if (matchedIntent) {
-        responseText = matchedIntent.responses[lang] || matchedIntent.responses.English;
-        responseActions = matchedIntent.actions;
-      } else {
-        responseText = KNOWLEDGE_BASE.defaultResponse[lang] || KNOWLEDGE_BASE.defaultResponse.English;
-        responseActions = [
-          { label: '📅 Book a Demo', type: 'navigate', path: '/contact' },
-          { label: '💳 View Pricing', type: 'navigate', path: '/pricing' }
-        ];
-      }
+      // Honest failure state — never silently answer from a duplicated local
+      // knowledge base pretending to be the real backend response.
+      responseText = lang === 'English'
+        ? "I'm having trouble reaching the assistant right now. Please try again in a moment."
+        : KNOWLEDGE_BASE.defaultResponse[lang] || "I'm having trouble reaching the assistant right now. Please try again in a moment.";
+      responseActions = [];
     } finally {
       setMessages(prev => [
         ...prev,

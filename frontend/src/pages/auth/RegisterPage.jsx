@@ -3,11 +3,15 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
 import ParticleBackground from '../../components/ui/ParticleBackground';
 import PasswordStrength, { generatePassword } from '../../components/ui/PasswordStrength';
+import GoogleSignInButton from '../../components/ui/GoogleSignInButton';
 import { ShieldCheck, User, Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle2, Shield, Inbox } from 'lucide-react';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1); // 1=details, 2=verify, 3=profile
+  // Real account creation (step 1) logs the user in immediately — there is no
+  // backend email-verification flow, so step 2 is a genuine "you're set" screen,
+  // not a fake "we sent you an email" step that never actually sent anything.
+  const [step, setStep] = useState(1); // 1=details, 2=success
   const [form, setForm] = useState({
     fullName: '', email: '', password: '', confirmPassword: '',
     company: '', role: 'individual', agreeTerms: false,
@@ -56,26 +60,18 @@ export default function RegisterPage() {
     }
   };
 
-  const handleVerify = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 600));
-    setStep(3);
-    setLoading(false);
-  };
-
   const handleComplete = () => {
     navigate('/dashboard');
   };
 
-  const handleSocialSignup = async (provider) => {
+  const handleGoogleCredential = async (credential) => {
     setLoading(true);
     setError('');
     try {
-      await googleLogin('mock_google_token', `new_${provider}_user@gmail.com`, 'New User');
+      await googleLogin(credential);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.message || 'Social sign-up failed.');
+      setError(err.message || 'Google sign-up failed.');
     } finally {
       setLoading(false);
     }
@@ -97,7 +93,7 @@ export default function RegisterPage() {
 
           {/* Progress Steps */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 28, justifyContent: 'center' }}>
-            {[1, 2, 3].map(s => (
+            {[1, 2].map(s => (
               <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{
                   width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -109,7 +105,7 @@ export default function RegisterPage() {
                 }}>
                   {step > s ? <CheckCircle2 size={16} /> : s}
                 </div>
-                {s < 3 && <div style={{ width: 40, height: 2, background: step > s ? 'var(--accent)' : 'var(--border-subtle)', borderRadius: 1, transition: 'background 0.3s' }} />}
+                {s < 2 && <div style={{ width: 40, height: 2, background: step > s ? 'var(--accent)' : 'var(--border-subtle)', borderRadius: 1, transition: 'background 0.3s' }} />}
               </div>
             ))}
           </div>
@@ -182,10 +178,8 @@ export default function RegisterPage() {
                 <div className="auth-divider-line" />
               </div>
 
-              <div className="auth-social">
-                <button className="auth-social-btn" onClick={() => handleSocialSignup('google')}>Google</button>
-                <button className="auth-social-btn" onClick={() => handleSocialSignup('microsoft')}>Microsoft</button>
-                <button className="auth-social-btn" onClick={() => handleSocialSignup('github')}>GitHub</button>
+              <div className="auth-social" style={{ display: 'flex', justifyContent: 'center' }}>
+                <GoogleSignInButton onCredential={handleGoogleCredential} onError={setError} text="signup_with" />
               </div>
 
               <div className="auth-footer">
@@ -195,36 +189,6 @@ export default function RegisterPage() {
           )}
 
           {step === 2 && (
-            <>
-              <h1 className="auth-title">Verify your email</h1>
-              <p className="auth-subtitle">
-                We sent a verification link to<br />
-                <strong style={{ color: 'var(--text-primary)' }}>{form.email}</strong>
-              </p>
-
-              <div style={{ textAlign: 'center', margin: '20px 0', color: 'var(--accent)' }}>
-                <Inbox size={64} style={{ opacity: 0.8 }} />
-              </div>
-
-              <p style={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', lineHeight: 1.7, marginBottom: 24 }}>
-                Click the link in your email to verify your account. If you don't see it, check your spam folder.
-              </p>
-
-              <form className="auth-form" onSubmit={handleVerify}>
-                <button type="submit" className="auth-submit" disabled={loading}>
-                  {loading ? <><span className="btn-spinner" /> Checking...</> : 'I\'ve Verified My Email'}
-                </button>
-              </form>
-
-              <div style={{ textAlign: 'center', marginTop: 16 }}>
-                <button style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                  Resend verification email
-                </button>
-              </div>
-            </>
-          )}
-
-          {step === 3 && (
             <>
               <h1 className="auth-title">You're all set!</h1>
               <p className="auth-subtitle">Your CyberSentinel account is ready. Let's secure your organization.</p>
@@ -236,8 +200,7 @@ export default function RegisterPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, margin: '20px 0' }}>
                 {[
                   { icon: <Shield size={16} />, text: 'Account created successfully' },
-                  { icon: <Mail size={16} />, text: 'Email address verified' },
-                  { icon: <Lock size={16} />, text: '14-day free trial activated' },
+                  { icon: <Inbox size={16} />, text: `Signed in as ${form.email}` },
                 ].map((item, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'rgba(52,199,89,0.06)', border: '1px solid rgba(52,199,89,0.15)', borderRadius: 'var(--radius-sm)', fontSize: 14, color: 'var(--accent-green)', fontWeight: 500 }}>
                     <span>{item.icon}</span> {item.text}

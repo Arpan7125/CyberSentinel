@@ -1,30 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { adminService } from '../../../services/api';
+import { useSocket } from '../../../hooks/useSocket';
 import { Users, CreditCard, ShieldAlert, Activity, ArrowRight, Bot, Globe, Shield, Radio, Sparkles } from 'lucide-react';
 
 export default function DashboardModule() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [hoveredNode, setHoveredNode] = useState(null);
+  const [liveFeed, setLiveFeed] = useState([]);
 
-  useEffect(() => {
+  const fetchStats = useCallback(() => {
     adminService.stats()
       .then(data => setStats(data))
       .catch(err => console.error("Admin stats load error:", err))
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => { fetchStats(); }, [fetchStats]);
+
+  // Public sanitized live feed (see backend/api/signals.py) — every new scan across the
+  // platform triggers this, so we both show it directly and use it to refresh the totals above.
+  const { connected: feedLive } = useSocket('/ws/threat-feed/', {
+    enabled: true,
+    onMessage: (event) => {
+      setLiveFeed((prev) => [event, ...prev].slice(0, 8));
+      fetchStats();
+    },
+  });
+
   const totalUsers = stats?.stats?.total_users || 0;
   const totalScans = stats?.stats?.total_scans || 0;
   const totalThreats = stats?.stats?.total_threats || 0;
   const activeSubscribers = stats?.stats?.active_subscribers || 0;
   const recentScans = stats?.recent_scans || [];
-
-  const threatNodes = [
-    { id: 'node-us', name: 'US-East SIEM Node', ip: '192.168.1.104', lat: 38.89, lng: -77.03, status: 'Active', threats: 14 },
-    { id: 'node-eu', name: 'EU-Central Edge Node', ip: '10.0.4.12', lat: 50.11, lng: 8.68, status: 'Active', threats: 8 },
-    { id: 'node-ap', name: 'APAC Threat Scanner', ip: '172.16.0.42', lat: 1.35, lng: 103.81, status: 'Optimal', threats: 3 },
-  ];
 
   return (
     <div style={{ padding: '32px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 32 }}>
@@ -33,8 +40,8 @@ export default function DashboardModule() {
           <h2 style={{ margin: '0 0 6px 0', fontWeight: 700, color: 'var(--text-primary)', fontSize: 24 }}>Operations Overview</h2>
           <div style={{ color: 'var(--text-secondary)', fontSize: 14 }}>Real-time platform metrics, threat distribution, and live node diagnostics.</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(50,215,75,0.1)', padding: '8px 16px', borderRadius: 20, border: '1px solid rgba(50,215,75,0.2)', fontSize: 13, color: '#32D74B', fontWeight: 600 }}>
-          <Radio size={14} className="pulse-icon" /> Live Engine Connected
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: feedLive ? 'rgba(50,215,75,0.1)' : 'rgba(142,142,147,0.1)', padding: '8px 16px', borderRadius: 20, border: `1px solid ${feedLive ? 'rgba(50,215,75,0.2)' : 'rgba(142,142,147,0.2)'}`, fontSize: 13, color: feedLive ? '#32D74B' : 'var(--text-muted)', fontWeight: 600 }}>
+          <Radio size={14} className={feedLive ? 'pulse-icon' : ''} /> {feedLive ? 'Live Engine Connected' : 'Reconnecting…'}
         </div>
       </div>
 
@@ -98,46 +105,37 @@ export default function DashboardModule() {
         </div>
       </div>
       
-      {/* Live Interactive Threat Intelligence Map */}
+      {/* Live Threat Feed — every entry is a real ScanLog event pushed the instant it's created (backend/api/signals.py) */}
       <div style={{ background: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border-subtle)', padding: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Global Threat Intelligence Map</h3>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>Hover over active threat telemetry nodes to inspect live node diagnostics.</p>
-          </div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            {threatNodes.map(node => (
-              <div 
-                key={node.id}
-                onMouseEnter={() => setHoveredNode(node)}
-                onMouseLeave={() => setHoveredNode(null)}
-                style={{ 
-                  padding: '6px 14px', background: hoveredNode?.id === node.id ? 'var(--accent)' : 'var(--bg-primary)', 
-                  border: '1px solid var(--border-subtle)', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-                  color: hoveredNode?.id === node.id ? 'white' : 'var(--text-primary)', transition: 'all 0.2s'
-                }}
-              >
-                📍 {node.name}
-              </div>
-            ))}
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>Live Platform Activity</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>Streaming in real time as scans happen across the platform — no simulated events.</p>
           </div>
         </div>
 
-        <div style={{ height: 260, background: 'var(--bg-primary)', borderRadius: 10, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-subtle)' }}>
-          {/* Radial grid backdrop */}
-          <div style={{ position: 'absolute', inset: 0, opacity: 0.15, background: 'radial-gradient(circle at center, var(--accent) 0%, transparent 70%)' }} />
-          
-          <div style={{ textAlign: 'center', zIndex: 5 }}>
-            <Globe size={48} color="var(--accent)" style={{ marginBottom: 12, opacity: 0.8 }} />
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
-              {hoveredNode ? hoveredNode.name : "3 SIEM Nodes Active & Monitoring"}
+        <div style={{ minHeight: 180, background: 'var(--bg-primary)', borderRadius: 10, border: '1px solid var(--border-subtle)', padding: liveFeed.length ? 8 : 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {liveFeed.length === 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 180, textAlign: 'center' }}>
+              <Globe size={40} color="var(--text-muted)" style={{ marginBottom: 10, opacity: 0.6 }} />
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>Waiting for activity…</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>New scans anywhere on the platform will appear here instantly.</div>
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-              {hoveredNode 
-                ? `IP: ${hoveredNode.ip} | Status: ${hoveredNode.status} | Threats Blocked: ${hoveredNode.threats}` 
-                : "Hover over any node above to inspect real-time server telemetry."}
+          )}
+          {liveFeed.map((evt, idx) => (
+            <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary)', animation: idx === 0 ? 'md-fade-up 0.3s ease-out' : 'none' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Shield size={14} color={evt.risk_level === 'Critical' || evt.risk_level === 'High' ? '#FF453A' : '#32D74B'} />
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{evt.scan_type}</span>
+              </div>
+              <span style={{
+                padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                background: evt.risk_level === 'Critical' ? 'rgba(255,69,58,0.15)' : evt.risk_level === 'High' ? 'rgba(255,159,10,0.15)' : 'rgba(50,215,75,0.15)',
+                color: evt.risk_level === 'Critical' ? '#FF453A' : evt.risk_level === 'High' ? '#FF9F0A' : '#32D74B'
+              }}>{evt.risk_level} · {evt.risk_score}%</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{new Date(evt.created_at).toLocaleTimeString()}</span>
             </div>
-          </div>
+          ))}
         </div>
       </div>
 

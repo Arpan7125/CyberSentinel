@@ -45,8 +45,7 @@ export default function ScreenshotAnalyzerPage() {
         aiSummary: res.ai_summary || `OCR successfully extracted the text from the image. Threat assessment classified this content as ${res.risk_level} risk with a score of ${res.risk_score}%.`
       });
     } catch (err) {
-      console.error(err);
-      alert('Failed to analyze screenshot. Server might be offline.');
+      alert(err.data?.error || err.message || 'Failed to analyze screenshot.');
     } finally {
       setAnalyzing(false);
     }

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { adminService } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import TimelineComponent from '../../components/ui/Timeline';
 import GuidedTour from '../../components/ui/GuidedTour';
 import { useAuth } from '../../AuthContext';
-import { Users, Zap, ShieldAlert, Ticket } from 'lucide-react';
+import { Users, Zap, ShieldAlert, Ticket, Radio } from 'lucide-react';
 
 export default function OverviewPage() {
   const { user } = useAuth();
@@ -24,6 +25,10 @@ export default function OverviewPage() {
     }
   }, [user]);
 
+  // Real connection state to the live threat feed — the only "system health" signal
+  // this build can honestly report, rather than fabricated per-service statuses.
+  const { connected: feedLive } = useSocket('/ws/threat-feed/', { enabled: true });
+
   const fetchStats = async () => {
     try {
       const data = await adminService.stats();
@@ -42,10 +47,12 @@ export default function OverviewPage() {
     { label: 'Active Subscribers', value: stats?.stats?.active_subscribers || 0, sub: 'Marketing list', icon: <Ticket size={18} />, color: '#FF9500' },
   ];
 
+  const totalScans = stats?.stats?.total_scans || 0;
+  const totalThreats = stats?.stats?.total_threats || 0;
   const adminStats = [
-    { label: 'System Storage Usage', value: '74.2 GB / 1000 GB (7.4%)', color: 'var(--accent)' },
-    { label: 'API Usage Limit', value: `${(stats?.stats?.total_scans || 0) * 12} / 1,000,000 requests`, color: 'var(--accent)' },
-    { label: 'Network Bandwidth', value: '8.4 Gbps output', color: 'var(--accent-green)' }
+    { label: 'Threat Detection Ratio', value: `${totalScans ? Math.round((totalThreats / totalScans) * 100) : 0}% of scans flagged`, color: 'var(--accent)' },
+    { label: 'Active Newsletter Subscribers', value: `${stats?.stats?.active_subscribers || 0} subscribers`, color: 'var(--accent)' },
+    { label: 'Real-Time Engine', value: feedLive ? 'Connected' : 'Reconnecting…', color: feedLive ? 'var(--accent-green)' : 'var(--accent-orange)' }
   ];
 
   return (
@@ -143,26 +150,24 @@ export default function OverviewPage() {
       <div className="md-fade-up md-delay-300" style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr', gap: 24 }}>
         <div className="glass-card" style={{ padding: 24 }}>
           <h3 className="section-title" style={{ marginBottom: 16 }}>SOC Activity Timeline</h3>
-          <TimelineComponent />
+          <TimelineComponent items={(stats?.recent_scans || []).slice(0, 8).map((s) => ({
+            title: `${s.scan_type} scan — ${s.risk_level} risk`,
+            desc: s.user__username ? `Run by ${s.user__username}` : 'Run anonymously',
+            time: s.created_at,
+            active: s.risk_level === 'Critical' || s.risk_level === 'High',
+          }))} />
         </div>
-        
+
         <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <h3 className="section-title">Critical System Status Checklists</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            {[
-              { label: 'Threat Intelligence Engine', status: 'Healthy', details: 'All feeds active' },
-              { label: 'Database Replication', status: 'Healthy', details: 'Replica lag: 28ms' },
-              { label: 'SMTP Mail Servers', status: 'Healthy', details: 'SMTP queue empty' },
-              { label: 'API Edge Gateway', status: 'Healthy', details: 'Uptime 100%' },
-              { label: 'OAuth Token Service', status: 'Healthy', details: 'Token refresh success' },
-              { label: 'Sandbox Execution Host', status: 'Healthy', details: '2 cores in use' },
-            ].map((srv, idx) => (
-              <div key={idx} style={{ background: 'var(--bg-secondary)', padding: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>{srv.label}</span>
-                  <span className="status-badge status-active" style={{ fontSize: 9 }}><span className="status-badge-dot" /> {srv.status}</span>
-                </div>
-                <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>{srv.details}</p>
+          <h3 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Radio size={16} className={feedLive ? 'pulse-icon' : ''} color={feedLive ? 'var(--accent-green)' : 'var(--text-muted)'} />
+            Scan Type Distribution
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {['TEXT', 'URL', 'SCREENSHOT'].map((type) => (
+              <div key={type} style={{ background: 'var(--bg-secondary)', padding: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{type}</span>
+                <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{stats?.scan_type_distribution?.[type] ?? 0}</span>
               </div>
             ))}
           </div>

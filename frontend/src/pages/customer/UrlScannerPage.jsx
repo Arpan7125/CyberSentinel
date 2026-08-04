@@ -151,18 +151,18 @@ export default function UrlScannerPage() {
                   </div>
                 </div>
 
-                {/* Technical details grid */}
+                {/* Technical details grid — every value here is a real field from the backend heuristic engine */}
                 <div style={{ padding: 20, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, background: 'var(--bg-primary)' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <span className="form-label" style={{ fontSize: 10 }}>WHOIS & DNS Info</span>
+                    <span className="form-label" style={{ fontSize: 10 }}>Host Details</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Domain Age:</span>
-                        <strong style={{ color: (result.details?.whoisAge || '').includes('Days') ? '#EF4444' : 'var(--text-primary)' }}>{result.details?.whoisAge || 'Registered < 30 days ago'}</strong>
+                        <span style={{ color: 'var(--text-secondary)' }}>Subdomain Count:</span>
+                        <strong style={{ color: 'var(--text-primary)' }}>{result.details.subdomain_count}</strong>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Server Location:</span>
-                        <strong style={{ color: 'var(--text-primary)' }}>{result.details?.ipLocation || 'Cloudflare CDN / US'}</strong>
+                        <span style={{ color: 'var(--text-secondary)' }}>Raw IP Host:</span>
+                        <strong style={{ color: result.details.ip_address_host ? '#EF4444' : 'var(--text-primary)' }}>{result.details.ip_address_host ? 'Yes' : 'No'}</strong>
                       </div>
                     </div>
                   </div>
@@ -174,7 +174,7 @@ export default function UrlScannerPage() {
                         <span style={{ color: 'var(--text-secondary)' }}>Visual Spoofing:</span>
                         {result.details.brand_spoofing ? (
                           <strong style={{ color: '#EF4444', display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <AlertTriangle size={12} /> Detected
+                            <AlertTriangle size={12} /> {result.details.spoofed_brand || 'Detected'}
                           </strong>
                         ) : (
                           <strong style={{ color: 'var(--accent-green)' }}>Clean</strong>

@@ -69,15 +69,25 @@ class ApiEndpointsTestCase(APITestCase):
         self.assertEqual(ScanLog.objects.count(), 1)
         self.assertEqual(ScanLog.objects.first().scan_type, 'URL')
 
-    def test_dashboard_stats_endpoint(self):
-        # Initially empty logs will trigger prepopulation
+    def test_dashboard_stats_endpoint_empty_state(self):
+        # No scans yet — stats must reflect that honestly, not synthesize fake history.
         url = reverse('dashboard-stats')
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("total_scans", response.data)
-        self.assertGreater(response.data["total_scans"], 0) # Prepopulated mock entries
-        self.assertIn("recent_scans", response.data)
+        self.assertEqual(response.data["total_scans"], 0)
+        self.assertEqual(response.data["recent_scans"], [])
         self.assertIn("chart_data", response.data)
+
+    def test_dashboard_stats_endpoint_reflects_real_scan(self):
+        # Stats must be computed from a real ScanLog row, not seeded data.
+        analyze_url_endpoint = reverse('analyze-url')
+        self.client.post(analyze_url_endpoint, {"url": "https://example.com"}, format='json')
+
+        url = reverse('dashboard-stats')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["total_scans"], 1)
+        self.assertEqual(len(response.data["recent_scans"]), 1)
 
     def test_quiz_questions_endpoint(self):
         url = reverse('quiz-questions')
@@ -141,14 +151,12 @@ class AuthAndIntegrationsTestCase(APITestCase):
         response = self.client.post(login_url, login_data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_gmail_import_simulated_endpoint(self):
-        # Simulated Gmail import (no access token provided)
+    def test_gmail_import_without_connection_is_honest_error(self):
+        # No Gmail account connected — must fail clearly, never fabricate an inbox.
         url = reverse('integrations-gmail-import')
-        response = self.client.post(url, {"simulated": True}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("emails", response.data)
-        self.assertGreater(len(response.data["emails"]), 0)
-        self.assertEqual(response.data["source"], "Simulated Gmail Feed")
+        response = self.client.post(url, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("error", response.data)
 
     def test_sms_dispatch_simulated_endpoint(self):
         url = reverse('integrations-sms-dispatch')

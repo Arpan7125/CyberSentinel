@@ -52,11 +52,10 @@ export default function AccountSecurityPage() {
     try {
       const res = await integrationsService.startOAuth(providerId);
       if (res && res.auth_url) {
-        navigate(res.auth_url.replace('/dashboard', ''));
+        window.location.href = res.auth_url; // Real external redirect (e.g. Google's consent screen).
       }
     } catch (err) {
-      console.error("Failed to start OAuth:", err);
-      alert("Failed to connect to authentication provider.");
+      alert(err.data?.error || err.message || "Failed to connect to authentication provider.");
     } finally {
       setLoadingProvider(null);
     }

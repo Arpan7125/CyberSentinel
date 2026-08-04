@@ -10,7 +10,7 @@ import {
   Mail
 } from 'lucide-react';
 
-const API = 'http://localhost:8000/api';
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 export default function IncidentInbox() {
   const { token } = useAuth();
@@ -140,15 +140,18 @@ export default function IncidentInbox() {
     }
   };
 
-  // Mock sending draft response
-  const handleSendResponse = () => {
+  // Real Gmail "send" isn't wired up (would need the gmail.send OAuth scope on top of
+  // the current read-only Gmail import) — copy the AI draft instead of pretending to dispatch it.
+  const handleSendResponse = async () => {
     if (!replyDraft.trim()) return;
     setSendingReply(true);
-    setTimeout(() => {
-      setSendingReply(false);
+    try {
+      await navigator.clipboard.writeText(replyDraft);
       setSendSuccess(true);
       setReplyDraft('');
-    }, 1800);
+    } finally {
+      setSendingReply(false);
+    }
   };
 
   const getRiskColor = (lvl) => {
@@ -502,7 +505,7 @@ export default function IncidentInbox() {
                         >
                           <span className="cta-btn-inner">
                             <span className="cta-btn-text">
-                              {sendingReply ? 'TRANSMITTING...' : 'APPROVE & DISPATCH'}
+                              {sendingReply ? 'COPYING...' : 'COPY DRAFT TO CLIPBOARD'}
                             </span>
                           </span>
                         </button>
@@ -523,7 +526,7 @@ export default function IncidentInbox() {
                       gap: 12
                     }}>
                       <CheckCircle size={16} />
-                      <span><strong>✓ SECURE DISPATCH SENT</strong>: Response successfully dispatched back to recipient node. Logged to archive.</span>
+                      <span><strong>✓ COPIED</strong>: Draft copied to clipboard — paste it into your email client to send it.</span>
                     </div>
                   )}
 

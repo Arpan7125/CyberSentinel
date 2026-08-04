@@ -1,13 +1,15 @@
 import React from 'react';
 
 export default function Timeline({ items }) {
-  const defaultItems = [
-    { title: 'Auth Token Refreshed', desc: 'Secure session validated for node admin-42', time: '10 mins ago', active: true },
-    { title: 'Sms Dispatch Verified', desc: 'Alert message dispatched to +1 (555) 019-2834', time: '1 hour ago', active: false },
-    { title: 'Threat Feed Synchronized', desc: 'Successfully loaded 1,429 new IOC rules from AlienVault OTX', time: '3 hours ago', active: false },
-  ];
+  const timelineItems = items || [];
 
-  const timelineItems = items || defaultItems;
+  if (timelineItems.length === 0) {
+    return (
+      <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
+        No security events recorded yet.
+      </div>
+    );
+  }
 
   return (
     <div className="timeline">

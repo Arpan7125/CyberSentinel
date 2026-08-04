@@ -16,18 +16,21 @@ ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',  # Must precede django.contrib.staticfiles so `manage.py runserver` speaks ASGI/WebSockets
+
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Third-party libraries
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
-    
+    'channels',
+
     # Local apps
     'api',
 ]
@@ -61,6 +64,18 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'cybersentinel_backend.wsgi.application'
+ASGI_APPLICATION = 'cybersentinel_backend.asgi.application'
+
+# Real-time (WebSocket) channel layer — requires a running Redis instance.
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [REDIS_URL],
+        },
+    },
+}
 
 # Database
 DATABASES = {
@@ -120,7 +135,8 @@ CORS_ALLOW_CREDENTIALS = True
 # Django REST Framework — Token-based auth
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'api.bypass_auth.BypassAuthentication',
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
@@ -141,3 +157,26 @@ if os.getenv("EMAIL_HOST_USER") and os.getenv("EMAIL_HOST_PASSWORD"):
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
     DEFAULT_FROM_EMAIL = 'CyberSentinel <noreply@cybersentinel.ai>'
+    import warnings
+    warnings.warn(
+        "EMAIL_HOST_USER / EMAIL_HOST_PASSWORD are not set — password reset, OTP, and "
+        "notification emails will only be printed to the console, not actually delivered. "
+        "Set them in backend/.env to send real email (see .env.example).",
+        RuntimeWarning,
+    )
+
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY", "")
+if not VIRUSTOTAL_API_KEY:
+    import warnings
+    warnings.warn(
+        "VIRUSTOTAL_API_KEY is not set — the file scanner will return an honest "
+        "'unscanned' result instead of a real malware verdict. See .env.example.",
+        RuntimeWarning,
+    )
+
+# Google OAuth (real sign-in / Gmail import)
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_OAUTH_REDIRECT_URI = os.getenv(
+    "GOOGLE_OAUTH_REDIRECT_URI", "http://localhost:5173/app/oauth/callback"
+)

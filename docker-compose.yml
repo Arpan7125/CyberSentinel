@@ -1,6 +1,13 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: cybersentinel_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -13,6 +20,9 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - DEBUG=True
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
     restart: unless-stopped
 
 networks:

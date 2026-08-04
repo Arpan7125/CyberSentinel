@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
-import { dashboardService } from '../../services/api';
+import { dashboardService, integrationsService } from '../../services/api';
+import { useSocket } from '../../hooks/useSocket';
 import TimelineComponent from '../../components/ui/Timeline';
 import ThreatMap from '../../components/ui/ThreatMap';
 import WelcomeGuide from '../../components/ui/WelcomeGuide';
@@ -9,22 +10,31 @@ import GuidedTour from '../../components/ui/GuidedTour';
 import { Shield, ShieldAlert, Activity, Mail, Lock, Flag, Settings, ExternalLink, Bot, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showWelcome, setShowWelcome] = useState(false);
   const [showTour, setShowTour] = useState(false);
+  const [connectedAccounts, setConnectedAccounts] = useState([]);
+
+  // Live push on every new scan — see backend/api/signals.py (ScanLog post_save).
+  useSocket('/ws/dashboard/', {
+    token,
+    enabled: !!token,
+    onMessage: (liveStats) => setStats(liveStats),
+  });
 
   const TOUR_STEPS = [
     { targetId: 'tour-health-score', title: 'Posture Score', content: 'This score gives you a quick overview of your overall security health across all connected accounts.' },
-    { targetId: 'tour-threat-map', title: 'Live Threat Intel', content: 'Watch live simulations of global cyber threats being blocked in real-time by the Sentinel AI.' },
+    { targetId: 'tour-threat-map', title: 'Live Threat Intel', content: 'A real-time feed of scan activity across the platform, streamed over WebSocket as it happens.' },
     { targetId: 'tour-ai-recs', title: 'AI Recommendations', content: 'The system will automatically suggest critical security actions here if any vulnerabilities are found.' },
     { targetId: 'tour-email-scan', title: 'Quick Scanners', content: 'Use this button to quickly scan suspicious emails directly from your dashboard.' }
   ];
 
   useEffect(() => {
     fetchStats();
+    integrationsService.getConnectedAccounts().then(setConnectedAccounts).catch(() => {});
     if (user?.is_new_user && !localStorage.getItem('cs_hasSeenWelcome_Session')) {
       setShowWelcome(true);
     }
@@ -51,14 +61,16 @@ export default function DashboardPage() {
   else if (avgRisk > 50) { riskLevel = 'High'; riskColor = 'var(--accent-orange)'; }
   else if (avgRisk > 25) { riskLevel = 'Medium'; riskColor = '#FF9500'; }
   
-  const connectedAccounts = [
-    { provider: 'Google Workspace', email: user?.email || 'user@example.com', status: 'Secure' },
+  const aiRecommendations = [
+    { title: 'Review Suspicious Links', desc: `Our AI flagged ${stats?.total_threats || 0} threats recently.`, icon: <ShieldAlert size={18} />, action: '/dashboard/url-scanner', urgent: (stats?.total_threats || 0) > 0 },
   ];
 
-  const aiRecommendations = [
-    { title: 'Review Suspicious Links', desc: `Our AI flagged ${stats?.total_threats || 0} threats recently.`, icon: <ShieldAlert size={18} />, action: '/dashboard/url-scanner', urgent: true },
-    { title: 'Update Authentication', desc: 'Your current password is 6 months old. Consider updating it.', icon: <Lock size={18} />, action: '/dashboard/security', urgent: false }
-  ];
+  const timelineItems = (stats?.recent_scans || []).map((scan) => ({
+    title: `${scan.scan_type} scan — ${scan.risk_level} risk`,
+    desc: scan.risk_level === 'Low' ? 'No significant threats detected.' : `Risk score ${scan.risk_score}%.`,
+    time: new Date(scan.created_at).toLocaleString(),
+    active: scan.risk_level === 'Critical' || scan.risk_level === 'High',
+  }));
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingBottom: 40 }}>
@@ -209,22 +221,27 @@ export default function DashboardPage() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {connectedAccounts.map((acc, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+            {connectedAccounts.length === 0 && (
+              <div style={{ padding: '16px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
+                No accounts connected yet.
+              </div>
+            )}
+            {connectedAccounts.map((acc) => (
+              <div key={acc.id} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
                 <div style={{ width: 36, height: 36, borderRadius: 18, background: 'var(--bg-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700 }}>
-                  {acc.provider.charAt(0)}
+                  {acc.provider_name.charAt(0)}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{acc.provider}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{acc.email}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{acc.provider_name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{acc.email || 'No account email'}</div>
                 </div>
-                <div style={{ fontSize: 11, fontWeight: 700, padding: '4px 8px', borderRadius: 12, background: acc.status === 'Secure' ? 'rgba(50,215,75,0.1)' : 'rgba(255,159,10,0.1)', color: acc.status === 'Secure' ? 'var(--accent-green)' : '#FF9500', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {acc.status === 'Secure' ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+                <div style={{ fontSize: 11, fontWeight: 700, padding: '4px 8px', borderRadius: 12, background: acc.status === 'connected' ? 'rgba(50,215,75,0.1)' : 'rgba(255,159,10,0.1)', color: acc.status === 'connected' ? 'var(--accent-green)' : '#FF9500', display: 'flex', alignItems: 'center', gap: 4, textTransform: 'capitalize' }}>
+                  {acc.status === 'connected' ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
                   {acc.status}
                 </div>
               </div>
             ))}
-            
+
             <button className="btn-pub btn-pub-ghost" style={{ width: '100%', marginTop: 8, fontSize: 13 }} onClick={() => navigate('/dashboard/account-security')}>
               Connect Additional Account
             </button>
@@ -238,7 +255,7 @@ export default function DashboardPage() {
           <Activity size={20} color="var(--text-primary)" />
           <h3 style={{ fontSize: 15, fontWeight: 700 }}>Security Event Timeline</h3>
         </div>
-        <TimelineComponent />
+        <TimelineComponent items={timelineItems} />
       </div>
 
     </div>

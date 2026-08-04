@@ -12,23 +12,11 @@ export function AuthProvider({ children }) {
     return savedUser ? JSON.parse(savedUser) : null;
   });
   const [loading, setLoading] = useState(false);
-  
-  // Track login history & device sessions locally as a sync state
-  const [loginHistory, setLoginHistory] = useState(() => {
-    const saved = localStorage.getItem('cs_login_history');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [deviceSessions, setDeviceSessions] = useState(() => {
-    const saved = localStorage.getItem('cs_device_sessions');
-    return saved ? JSON.parse(saved) : [
-      { id: 'sess-1', device: 'Chrome / Windows', ip: '192.168.1.15', lastActive: 'Just now', current: true }
-    ];
-  });
 
   const lastActivityRef = useRef(Date.now());
 
   const logout = useCallback(async () => {
-    if (token && !token.startsWith('mock-')) {
+    if (token) {
       try {
         await fetch(`${API}/auth/logout/`, {
           method: 'POST',
@@ -84,22 +72,6 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let active = true;
     if (token) {
-      if (token.startsWith('mock-')) {
-        setLoading(false);
-        if (!user) {
-          if (token === 'mock-admin-token') {
-            const u = { id: 1, email: 'admin@cybersentinel.com', username: 'admin', fullName: 'System Admin', role: 'admin', is_staff: true, is_superuser: true };
-            setUser(u);
-            localStorage.setItem('cs_user', JSON.stringify(u));
-          } else {
-            const u = { id: 3, email: 'user@example.com', username: 'user', fullName: 'Demo User', role: 'customer' };
-            setUser(u);
-            localStorage.setItem('cs_user', JSON.stringify(u));
-          }
-        }
-        return;
-      }
-
       setLoading(true);
       fetch(`${API}/auth/profile/`, {
         headers: { Authorization: `Token ${token}` }
@@ -133,22 +105,6 @@ export function AuthProvider({ children }) {
     };
   }, [token, logout]);
 
-  const addLoginRecord = (userEmail, success = true, role = 'customer', customIp = null) => {
-    const record = {
-      id: Date.now(),
-      timestamp: new Date().toISOString(),
-      ip: customIp || '127.0.0.1',
-      device: navigator.userAgent.includes('Windows') ? 'Windows Desktop' : (navigator.userAgent.includes('Mac') ? 'macOS Desktop' : 'Mobile / Web App'),
-      success,
-      location: 'Local Workstation'
-    };
-    setLoginHistory(prev => {
-      const updated = [record, ...prev].slice(0, 50);
-      localStorage.setItem('cs_login_history', JSON.stringify(updated));
-      return updated;
-    });
-  };
-
   const login = useCallback(async (username, password) => {
     const res = await fetch(`${API}/auth/login/`, {
       method: 'POST',
@@ -157,7 +113,6 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) {
-      addLoginRecord(username, false);
       throw new Error(data.error || 'Invalid username or password.');
     }
 
@@ -174,7 +129,6 @@ export function AuthProvider({ children }) {
     };
     setUser(loggedUser);
     localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-    addLoginRecord(username, true, loggedUser.role);
     return { user: loggedUser };
   }, []);
 
@@ -199,28 +153,26 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) {
-      addLoginRecord(email, false);
       throw new Error(data.error || 'Invalid OTP code.');
     }
 
     localStorage.setItem('cs_token', data.token);
     setToken(data.token);
-    
+
     const loggedUser = {
       ...data.user,
       role: data.user.role || (data.user.is_superuser || data.user.is_staff ? 'admin' : 'customer')
     };
     setUser(loggedUser);
     localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-    addLoginRecord(email, true, loggedUser.role);
     return { user: loggedUser };
   }, []);
 
-  const googleLogin = useCallback(async (idToken, email = '', name = '') => {
+  const googleLogin = useCallback(async (credential) => {
     const res = await fetch(`${API}/auth/google-login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id_token: idToken, email, name }),
+      body: JSON.stringify({ credential }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -236,7 +188,6 @@ export function AuthProvider({ children }) {
     };
     setUser(loggedUser);
     localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-    addLoginRecord(loggedUser.email, true, loggedUser.role);
     return { user: loggedUser };
   }, []);
 
@@ -248,7 +199,6 @@ export function AuthProvider({ children }) {
     });
     const data = await res.json();
     if (!res.ok) {
-      addLoginRecord(email, false, 'admin');
       throw new Error(data.error || 'Admin authentication failed.');
     }
 
@@ -263,7 +213,6 @@ export function AuthProvider({ children }) {
     };
     setUser(loggedUser);
     localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-    addLoginRecord(email, true, 'admin');
     return { user: loggedUser };
   }, []);
 
@@ -288,14 +237,6 @@ export function AuthProvider({ children }) {
     return newUser;
   }, []);
 
-  const revokeSession = useCallback((sessionId) => {
-    setDeviceSessions(prev => {
-      const updated = prev.filter(s => s.id !== sessionId);
-      localStorage.setItem('cs_device_sessions', JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
   return (
     <AuthContext.Provider value={{
       user,
@@ -313,9 +254,6 @@ export function AuthProvider({ children }) {
       isAdmin: user?.role === 'admin' || user?.is_superuser || user?.is_staff,
       isEnterprise: user?.role === 'enterprise' || user?.role === 'admin' || user?.is_superuser,
       isCustomer: !!user,
-      loginHistory,
-      deviceSessions,
-      revokeSession
     }}>
       {children}
     </AuthContext.Provider>

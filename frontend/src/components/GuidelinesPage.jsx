@@ -105,7 +105,7 @@ export default function GuidelinesPage() {
               fontSize: 12.5,
               color: 'var(--text-secondary)'
             }}>
-              💡 <strong>Prototype Notice:</strong> If you do not have Google API credentials configured, clicking the <strong>Sync Gmail Messages</strong> button on the dashboard will import a realistic pre-loaded simulated feed for verification.
+              💡 <strong>Note:</strong> Gmail import requires a real connection — without configured Google OAuth credentials and a connected account, the <strong>Sync Gmail Messages</strong> button will show an honest "not connected" error rather than any placeholder data.
             </div>
           </div>
 

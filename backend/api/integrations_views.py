@@ -56,14 +56,89 @@ class UserIntegrationView(APIView):
         return Response({'message': 'Integrations config saved successfully.'}, status=status.HTTP_200_OK)
 
 
+def sync_gmail_real(user, access_token):
+    """Fetch and scan real inbox messages via the Gmail API. Returns None if the
+    Google client libs aren't installed or the API call fails — callers decide
+    how to surface that (never silently substitute fake data themselves)."""
+    if not GOOGLE_LIBS_AVAILABLE or not access_token:
+        return None
+    try:
+        creds = Credentials(token=access_token)
+        service = build('gmail', 'v1', credentials=creds)
+
+        list_response = service.users().messages().list(userId='me', q='label:INBOX', maxResults=5).execute()
+        messages = list_response.get('messages', [])
+
+        results = []
+        for msg in messages:
+            msg_detail = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
+            payload = msg_detail.get('payload', {})
+            headers = payload.get('headers', [])
+
+            subject = "No Subject"
+            sender = "Unknown Sender"
+            auth_results = ""
+            for header in headers:
+                h_name = header['name'].lower()
+                if h_name == 'subject':
+                    subject = header['value']
+                elif h_name == 'from':
+                    sender = header['value']
+                elif h_name == 'authentication-results':
+                    auth_results = header['value']
+
+            def _auth_verdict(mechanism):
+                m = re.search(rf'{mechanism}=(\w+)', auth_results, re.IGNORECASE)
+                return m.group(1).capitalize() if m else 'Unavailable'
+
+            body_text = msg_detail.get('snippet', '')
+            for part in payload.get('parts', []):
+                if part['mimeType'] == 'text/plain':
+                    data = part.get('body', {}).get('data', '')
+                    if data:
+                        body_text = base64.urlsafe_b64decode(data.encode('ASCII')).decode('utf-8', errors='ignore')
+                        break
+
+            scan_content = f"Sender: {sender}\nSubject: {subject}\nContent: {body_text}"
+            analysis = classifier.analyze_text(scan_content)
+
+            log_entry = ScanLog.objects.create(
+                user=user,
+                scan_type='TEXT',
+                input_content=body_text,
+                sender=sender,
+                subject=subject,
+                risk_score=analysis["risk_score"],
+                risk_level=analysis["risk_level"]
+            )
+
+            results.append({
+                'id': log_entry.id,
+                'sender': sender,
+                'subject': subject,
+                'body_snippet': body_text[:200] + ('...' if len(body_text) > 200 else ''),
+                'risk_score': analysis["risk_score"],
+                'risk_level': analysis["risk_level"],
+                'threat_indicators': analysis["threat_indicators"],
+                # Real values parsed from Gmail's Authentication-Results header, not derived from risk_score.
+                'spf': _auth_verdict('spf'),
+                'dkim': _auth_verdict('dkim'),
+                'dmarc': _auth_verdict('dmarc'),
+            })
+        return results
+    except Exception as e:
+        print(f"[GMAIL API IMPORT ERROR] {str(e)}")
+        return None
+
+
 class GmailImportView(APIView):
-    """Import and scan messages from Gmail (via real Google API or simulated feed)."""
+    """Import and scan real Gmail inbox messages. Requires a real connected Gmail
+    account (see oauth_views.OAuthCallbackView) — no simulated fallback."""
 
     def post(self, request):
         user = request.user if request.user and request.user.is_authenticated else None
         access_token = request.data.get('access_token', '').strip()
-        
-        # Check database config if authenticated
+
         if not access_token and user:
             from .models import UserIntegration
             try:
@@ -72,148 +147,22 @@ class GmailImportView(APIView):
             except UserIntegration.DoesNotExist:
                 pass
 
-        use_simulated = request.data.get('simulated', False) or not access_token
-        results = []
-
-        if not use_simulated and GOOGLE_LIBS_AVAILABLE:
-            try:
-                # Setup OAuth2 credentials
-                creds = Credentials(token=access_token)
-                service = build('gmail', 'v1', credentials=creds)
-
-                # Fetch last 5 messages from inbox
-                list_response = service.users().messages().list(userId='me', q='label:INBOX', maxResults=5).execute()
-                messages = list_response.get('messages', [])
-
-                for msg in messages:
-                    msg_id = msg['id']
-                    msg_detail = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
-
-                    payload = msg_detail.get('payload', {})
-                    headers = payload.get('headers', [])
-
-                    subject = "No Subject"
-                    sender = "Unknown Sender"
-                    for header in headers:
-                        h_name = header['name'].lower()
-                        if h_name == 'subject':
-                            subject = header['value']
-                        elif h_name == 'from':
-                            sender = header['value']
-
-                    # Extract body text
-                    snippet = msg_detail.get('snippet', '')
-                    body_text = snippet
-
-                    # Try to fetch raw text if parts exist
-                    parts = payload.get('parts', [])
-                    if parts:
-                        for part in parts:
-                            if part['mimeType'] == 'text/plain':
-                                p_body = part.get('body', {})
-                                data = p_body.get('data', '')
-                                if data:
-                                    # Base64 URL safe decode
-                                    decoded_bytes = base64.urlsafe_b64decode(data.encode('ASCII'))
-                                    body_text = decoded_bytes.decode('utf-8', errors='ignore')
-                                    break
-
-                    # Construct text to scan
-                    scan_content = f"Sender: {sender}\nSubject: {subject}\nContent: {body_text}"
-                    analysis = classifier.analyze_text(scan_content)
-
-                    # Log to database
-                    log_entry = ScanLog.objects.create(
-                        user=user,
-                        scan_type='TEXT',
-                        input_content=body_text,
-                        sender=sender,
-                        subject=subject,
-                        risk_score=analysis["risk_score"],
-                        risk_level=analysis["risk_level"]
-                    )
-
-                    results.append({
-                        'id': log_entry.id,
-                        'sender': sender,
-                        'subject': subject,
-                        'body_snippet': body_text[:200] + ('...' if len(body_text) > 200 else ''),
-                        'risk_score': analysis["risk_score"],
-                        'risk_level': analysis["risk_level"],
-                        'threat_indicators': analysis["threat_indicators"]
-                    })
-
-                return Response({
-                    'message': f'Successfully synced {len(results)} emails from Gmail.',
-                    'source': 'Gmail API',
-                    'emails': results
-                }, status=status.HTTP_200_OK)
-
-            except Exception as e:
-                # Auto-fallback to simulated feed on Gmail client error
-                print(f"[GMAIL API IMPORT ERROR] {str(e)}. Falling back to simulation mode.")
-                use_simulated = True
-
-        if use_simulated:
-            # High-fidelity simulated feed
-            simulated_emails = [
-                {
-                    'sender': 'security-alerts@paypa1-security-verification.xyz',
-                    'subject': 'URGENT: Suspicious transaction detected - Verify account now',
-                    'body': 'A charge of $499.00 was authorized on your PayPal node. If you did not make this request, please confirm your access credentials at http://paypa1-security-verification.xyz/signin to reject payment.'
-                },
-                {
-                    'sender': 'sarah.jenkins@company-hq.com',
-                    'subject': 'RE: CyberSentinel Dev Deployment Update',
-                    'body': 'Hi Joshua, I checked the new ML models in the sandbox. They are working properly! Let\'s schedule the production staging build review for Monday morning.'
-                },
-                {
-                    'sender': 'billing-ops@netflix-renewals.club',
-                    'subject': 'Netflix Billing Failure - Action Required',
-                    'body': 'Your membership renewal payment of $19.99 failed. To avoid interruption, verify your credit card immediately at http://netflix-renewals.club/account-update.'
-                },
-                {
-                    'sender': 'noreply@github.com',
-                    'subject': 'GitHub Security Notice: New SSH key added to your profile',
-                    'body': 'An SSH key (SHA256:7B8x9p...) was added to your GitHub credentials from IP 192.168.1.1. If this was you, no action is needed. Otherwise, lock account.'
-                },
-                {
-                    'sender': 'tracking-delivery@ups-parcel-alert.net',
-                    'subject': 'UPS Delivery Failed: Please confirm your address coordinates',
-                    'body': 'Your shipment #UPS-491-X39 could not be routed because of a labeling error. Access the portal at http://ups-parcel-alert.net/redelivery to schedule delivery.'
-                }
-            ]
-
-            for item in simulated_emails:
-                scan_content = f"Sender: {item['sender']}\nSubject: {item['subject']}\nContent: {item['body']}"
-                analysis = classifier.analyze_text(scan_content)
-
-                # Log to database
-                log_entry = ScanLog.objects.create(
-                    user=user,
-                    scan_type='TEXT',
-                    input_content=item['body'],
-                    sender=item['sender'],
-                    subject=item['subject'],
-                    risk_score=analysis["risk_score"],
-                    risk_level=analysis["risk_level"]
-                )
-
-                results.append({
-                    'id': log_entry.id,
-                    'sender': item['sender'],
-                    'subject': item['subject'],
-                    'body_snippet': item['body'],
-                    'risk_score': analysis["risk_score"],
-                    'risk_level': analysis["risk_level"],
-                    'threat_indicators': analysis["threat_indicators"]
-                })
-
+        if not access_token:
             return Response({
-                'message': 'Gmail OAuth credentials not provided or connection error. Loaded simulated secure Gmail integration feed.',
-                'source': 'Simulated Gmail Feed',
-                'emails': results
-            }, status=status.HTTP_200_OK)
+                'error': 'No Gmail account connected. Connect Gmail under Settings → Integrations first.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        results = sync_gmail_real(user, access_token)
+        if results is None:
+            return Response({
+                'error': 'Could not read your Gmail inbox — the connection may have expired. Try reconnecting Gmail.'
+            }, status=status.HTTP_502_BAD_GATEWAY)
+
+        return Response({
+            'message': f'Successfully synced {len(results)} emails from Gmail.',
+            'source': 'Gmail API',
+            'emails': results
+        }, status=status.HTTP_200_OK)
 
 
 class SmsDispatchView(APIView):

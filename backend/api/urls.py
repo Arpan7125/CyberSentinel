@@ -8,6 +8,7 @@ from .admin_views import AdminStatsView, AdminUserActionView
 from .integrations_views import GmailImportView, SmsDispatchView, UserIntegrationView, GmailReplyDraftView, PublicConfigView
 from .ticket_views import TicketViewSet
 from .notification_views import NotificationViewSet
+from .security_views import LoginHistoryView, DeviceSessionListView, DeviceSessionRevokeView, DeveloperApiKeyView
 from .saas_views import (
     SubscriptionPlanViewSet, UserSubscriptionViewSet, PaymentInvoiceViewSet,
     BlogPostViewSet, FAQViewSet, TeamMemberViewSet, ScamReportViewSet,
@@ -75,6 +76,13 @@ urlpatterns = [
     path('integrations/connected/<int:account_id>/logs/', __import__('api.oauth_views', fromlist=['']).IntegrationSyncLogsView.as_view(), name='integrations-logs'),
     
     path('config/public/', PublicConfigView.as_view(), name='config-public'),
+
+    # Security & Access (real login history, device sessions, developer API keys)
+    path('security/login-history/', LoginHistoryView.as_view(), name='security-login-history'),
+    path('security/sessions/', DeviceSessionListView.as_view(), name='security-sessions'),
+    path('security/sessions/<int:session_id>/revoke/', DeviceSessionRevokeView.as_view(), name='security-sessions-revoke'),
+    path('security/api-keys/', DeveloperApiKeyView.as_view(), name='security-api-keys'),
+    path('security/api-keys/<int:key_id>/', DeveloperApiKeyView.as_view(), name='security-api-keys-detail'),
     
     # Subscriptions
     path('subscribe/', SubscribeView.as_view(), name='subscribe'),

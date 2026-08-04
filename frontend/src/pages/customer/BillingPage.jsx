@@ -46,22 +46,14 @@ export default function BillingPage() {
           }
         }
 
-        const fallbackInvoices = [
-          { id: 'INV-2026-001', date: '2026-07-01', amount: '$0.00', status: 'Paid' },
-          { id: 'INV-2026-002', date: '2026-06-01', amount: '$0.00', status: 'Paid' }
-        ];
-
-        if (invs.length > 0) {
-          const mappedInvs = invs.map(i => ({
-            id: `INV-2026-00${i.id}`,
-            date: new Date(i.date).toLocaleDateString(),
-            amount: `$${i.amount}`,
-            status: i.status.toUpperCase()
-          }));
-          setInvoices(mappedInvs);
-        } else {
-          setInvoices(fallbackInvoices);
-        }
+        const mappedInvs = invs.map(i => ({
+          id: `INV-${i.id}`,
+          date: new Date(i.date).toLocaleDateString(),
+          amount: `$${i.amount}`,
+          status: i.status.toUpperCase(),
+          pdfUrl: i.pdf_url || null,
+        }));
+        setInvoices(mappedInvs);
       } catch (err) {
         console.error("Failed to fetch billing data:", err);
       } finally {
@@ -169,9 +161,13 @@ export default function BillingPage() {
                     <span className="status-badge status-active"><span className="status-badge-dot" /> {inv.status}</span>
                   </td>
                   <td>
-                    <button className="btn-pub btn-pub-ghost btn-pub-sm" onClick={() => alert(`Downloading Invoice ${inv.id}`)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Download size={14} /> Download PDF
-                    </button>
+                    {inv.pdfUrl ? (
+                      <a href={inv.pdfUrl} target="_blank" rel="noopener noreferrer" className="btn-pub btn-pub-ghost btn-pub-sm" style={{ display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
+                        <Download size={14} /> Download PDF
+                      </a>
+                    ) : (
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No PDF available</span>
+                    )}
                   </td>
                 </tr>
               )) : (

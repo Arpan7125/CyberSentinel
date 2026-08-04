@@ -7,6 +7,19 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token
 
 
+def record_login(request, user):
+    """Write a real LoginHistory row and upsert a DeviceSession — the Security
+    page reads these directly, no client-side fabricated login records."""
+    from .models import LoginHistory, DeviceSession
+    ip = request.META.get('REMOTE_ADDR') or '0.0.0.0'
+    ua = (request.META.get('HTTP_USER_AGENT') or 'Unknown Device')[:255]
+    LoginHistory.objects.create(user=user, ip_address=ip, device_info=ua, success=True)
+    DeviceSession.objects.update_or_create(
+        user=user, device_name=ua,
+        defaults={'ip_address': ip, 'is_revoked': False},
+    )
+
+
 class RegisterView(APIView):
     """Register a new user account."""
     authentication_classes = []
@@ -45,7 +58,8 @@ class RegisterView(APIView):
             user.is_superuser = True
             user.save()
         token, _ = Token.objects.get_or_create(user=user)
-        
+        record_login(request, user)
+
         return Response({
             'message': 'Account created successfully!',
             'token': token.key,
@@ -88,13 +102,14 @@ class LoginView(APIView):
         
         if not user.is_active:
             return Response({'error': 'Account is disabled.'}, status=status.HTTP_403_FORBIDDEN)
-        
+
         token, _ = Token.objects.get_or_create(user=user)
-        
+        record_login(request, user)
+
         from django.utils import timezone
         from datetime import timedelta
         is_new_user = (timezone.now() - user.date_joined) < timedelta(minutes=5)
-        
+
         return Response({
             'message': 'Login successful.',
             'token': token.key,
@@ -479,34 +494,44 @@ class OTPLoginView(APIView):
 
 class GoogleLoginView(APIView):
     """
-    Validates a Google ID Token or Google user credential sent from frontend.
-    Auto-registers the user if their email is not already in the system.
+    Verifies a real Google ID token (JWT) cryptographically against Google's public
+    keys before trusting anything in it. Email/name come ONLY from the verified
+    token payload — never from client-supplied fields, which would let anyone log
+    in as any existing user just by naming their email (this endpoint used to have
+    exactly that hole: it trusted a plain client-supplied `email` with no proof of
+    ownership at all).
     """
     authentication_classes = []
     permission_classes = [AllowAny]
-    def post(self, request):
-        import requests
-        token = request.data.get('id_token', '').strip()
-        email = request.data.get('email', '').strip()
-        full_name = request.data.get('name', '').strip()
 
-        if not token and not email:
-            return Response({'error': 'Google token or email is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not email and token:
-            try:
-                res = requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={token}", timeout=5)
-                if res.status_code == 200:
-                    token_info = res.json()
-                    email = token_info.get('email', '').strip()
-                    full_name = token_info.get('name', full_name)
-            except Exception:
-                pass
-            
-            if not email and ('@' in token):
-                email = token
-            elif not email:
-                email = "google_user@cybersentinel.ai"
+    def post(self, request):
+        from django.conf import settings
+
+        credential = (request.data.get('credential') or request.data.get('id_token') or '').strip()
+        if not credential:
+            return Response({'error': 'Google credential is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not settings.GOOGLE_CLIENT_ID:
+            return Response({'error': 'Google sign-in is not configured on this server.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            from google.oauth2 import id_token as google_id_token
+            from google.auth.transport import requests as google_requests
+        except ImportError:
+            return Response({'error': 'Google sign-in dependencies are not installed on the server.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            payload = google_id_token.verify_oauth2_token(
+                credential, google_requests.Request(), settings.GOOGLE_CLIENT_ID
+            )
+        except ValueError:
+            return Response({'error': 'Invalid or expired Google credential.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if not payload.get('email_verified', False):
+            return Response({'error': 'Google account email is not verified.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        email = payload.get('email', '').strip()
+        full_name = payload.get('name', '').strip()
 
         if not email:
             return Response({'error': 'Unable to resolve Google email address.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -539,7 +564,8 @@ class GoogleLoginView(APIView):
         
         from rest_framework.authtoken.models import Token
         auth_token, _ = Token.objects.get_or_create(user=user)
-        
+        record_login(request, user)
+
         return Response({
             'message': 'Google authentication successful!',
             'token': auth_token.key,

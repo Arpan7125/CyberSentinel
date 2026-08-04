@@ -104,16 +104,18 @@ function IntegrationConnectModal({ provider, onClose, onConfirm }) {
 
 /* ── Manage Modal ─────────────────────────────────────────────────── */
 function AccountManageModal({ account, onClose, onSync, onDisconnect }) {
-  if (!account) return null;
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!account) return;
     integrationsService.getSyncLogs(account.id)
       .then(res => setLogs(res || []))
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
-  }, [account.id]);
+  }, [account]);
+
+  if (!account) return null;
 
   const brand = PROVIDER_BRAND[account.provider_name] || { bg: '#6c757d', gradient: 'linear-gradient(135deg,#6c757d,#495057)', letter: account.provider_name[0], color: '#fff' };
 

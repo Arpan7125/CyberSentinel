@@ -1,8 +1,9 @@
 import React, { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './AuthContext';
 import { LanguageProvider } from './LanguageContext';
 import { NotificationProvider } from './NotificationContext';
+import { ToastProvider } from './components/ui/Toast';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 
 // Layouts (loaded eagerly — they wrap pages)
@@ -73,25 +74,35 @@ const ApiSandbox = lazy(() => import('./components/ApiSandbox'));
 const GuidelinesPage = lazy(() => import('./components/GuidelinesPage'));
 const Chatbot = lazy(() => import('./components/Chatbot'));
 
-// Route Guards (Bypassed)
+function LoadingScreen() {
+  return (
+    <div className="flex h-screen items-center justify-center gap-3 bg-bg-primary">
+      <div className="spinner size-5" />
+      <span className="text-[0.8125rem] text-text-secondary">Loading…</span>
+    </div>
+  );
+}
+
+/* ── Route guards ────────────────────────────────────────────────────────
+   These were previously no-op stubs (`return children`), which left the whole
+   console and admin panel reachable without signing in. */
 function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   return children;
 }
 
 function AdminRoute({ children }) {
-  return children;
-}
+  const { user, loading, isAdmin } = useAuth();
+  const location = useLocation();
 
-function LoadingScreen() {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100vh', gap: 12, background: 'var(--bg-primary)'
-    }}>
-      <div className="spinner" style={{ width: 20, height: 20 }} />
-      <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>Loading...</span>
-    </div>
-  );
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Navigate to="/admin-login" replace state={{ from: location.pathname }} />;
+  if (!isAdmin) return <Navigate to="/dashboard" replace />;
+  return children;
 }
 
 // Secret Admin Easter Egg Hook
@@ -208,13 +219,15 @@ function AppContent() {
 export default function App() {
   return (
     <LanguageProvider>
-      <AuthProvider>
-        <NotificationProvider>
-          <BrowserRouter>
-            <AppContent />
-          </BrowserRouter>
-        </NotificationProvider>
-      </AuthProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <NotificationProvider>
+            <BrowserRouter>
+              <AppContent />
+            </BrowserRouter>
+          </NotificationProvider>
+        </AuthProvider>
+      </ToastProvider>
     </LanguageProvider>
   );
 }

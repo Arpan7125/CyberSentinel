@@ -103,6 +103,23 @@ class PasswordResetOTP(models.Model):
     def __str__(self):
         return f"{self.email} | {self.otp} | Verified: {self.is_verified}"
 
+class DeveloperApiKey(models.Model):
+    """User-generated API keys for external SIEM/SOC integrations. Only a hash
+    of the full key is stored — the plaintext key is shown once at creation
+    and never persisted, same convention as GitHub personal access tokens."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='developer_api_keys')
+    name = models.CharField(max_length=150)
+    prefix = models.CharField(max_length=20)
+    key_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.name} ({self.prefix}...) for {self.user.username}"
+
+
 class AdminAuthKey(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='admin_auth_key')
     auth_key = models.CharField(max_length=64, unique=True)

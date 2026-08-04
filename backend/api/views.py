@@ -11,6 +11,7 @@ from .serializers import ScanLogSerializer, QuizQuestionSerializer
 from .ml_classifier import classifier
 from .url_analyzer import analyze_url
 from .ocr_processor import extract_text_from_image
+from .dashboard_utils import compute_dashboard_stats
 
 class TextAnalysisView(APIView):
     def post(self, request):
@@ -67,7 +68,15 @@ class ScreenshotAnalysisView(APIView):
         # Temporary save image to read it (Django handles in-memory vs temporary files)
         try:
             extracted_text, engine_used = extract_text_from_image(image_file)
-            
+
+            if not extracted_text:
+                # Honest failure — never score/classify an empty extraction as "safe".
+                return Response({
+                    "error": engine_used,
+                    "extracted_text": "",
+                    "ocr_engine": engine_used,
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
             # Now run text analysis on the extracted text
             text_result = classifier.analyze_text(extracted_text)
             
@@ -122,98 +131,7 @@ class ScreenshotAnalysisView(APIView):
 class DashboardStatsView(APIView):
     def get(self, request):
         user = request.user if request.user and request.user.is_authenticated else None
-        
-        # Generate initial logs if table is completely empty for this user (helps UI presentation immediately)
-        if user:
-            logs = ScanLog.objects.filter(user=user)
-        else:
-            anon_logs_count = ScanLog.objects.filter(user__isnull=True).count()
-            if anon_logs_count == 0:
-                self._prepopulate_mock_logs(None)
-            logs = ScanLog.objects.filter(user__isnull=True)
-
-        # Gather general metrics
-        total_scans = logs.count()
-        
-        threats = logs.exclude(risk_level='Low')
-        total_threats = threats.count()
-        
-        avg_risk = sum([log.risk_score for log in logs]) / max(1, total_scans)
-        
-        # Counts by category
-        scan_type_counts = logs.values('scan_type').annotate(count=Count('id'))
-        types_dict = {item['scan_type']: item['count'] for item in scan_type_counts}
-        
-        # Risk level distribution
-        risk_level_counts = logs.values('risk_level').annotate(count=Count('id'))
-        risk_dict = {item['risk_level']: item['count'] for item in risk_level_counts}
-
-        # Retrieve recent 8 scans
-        recent_scans = ScanLogSerializer(logs[:8], many=True).data
-
-        # Build chart data (daily scans over past 7 days)
-        chart_data = []
-        for i in range(6, -1, -1):
-            date = timezone.now().date() - timedelta(days=i)
-            day_logs = logs.filter(created_at__date=date)
-            chart_data.append({
-                "date": date.strftime("%b %d"),
-                "scans": day_logs.count(),
-                "threats": day_logs.exclude(risk_level='Low').count()
-            })
-
-        return Response({
-            "total_scans": total_scans,
-            "total_threats": total_threats,
-            "avg_risk": round(avg_risk, 1),
-            "threats_percentage": round((total_threats / max(1, total_scans)) * 100, 1),
-            "types_distribution": {
-                "text": types_dict.get('TEXT', 0),
-                "url": types_dict.get('URL', 0),
-                "screenshot": types_dict.get('SCREENSHOT', 0),
-            },
-            "risk_distribution": {
-                "low": risk_dict.get('Low', 0),
-                "medium": risk_dict.get('Medium', 0),
-                "high": risk_dict.get('High', 0),
-                "critical": risk_dict.get('Critical', 0),
-            },
-            "chart_data": chart_data,
-            "recent_scans": recent_scans
-        }, status=status.HTTP_200_OK)
-
-    def _prepopulate_mock_logs(self, user):
-        # Set up a pool of mock entries spanning the past few days
-        now = timezone.now()
-        mock_templates = [
-            ('TEXT', 'Urgent update: Pay invoice now', 85.0, 'Critical', 2),
-            ('URL', 'http://paypal-security-update.xyz/login', 95.0, 'Critical', 3),
-            ('TEXT', 'Hey Joshua, meeting scheduled for 10am', 5.0, 'Low', 1),
-            ('URL', 'https://github.com/login', 0.0, 'Low', 4),
-            ('SCREENSHOT', '[Screenshot: invoice.png] Extracted PayPal charge', 88.0, 'Critical', 0),
-            ('TEXT', 'Your Amazon package tracking details', 12.0, 'Low', 5),
-            ('URL', 'http://chase-verification-portal.com', 92.0, 'Critical', 1),
-            ('TEXT', 'Congratulations! You won a free iPhone!', 78.0, 'High', 2),
-            ('SCREENSHOT', '[Screenshot: alert.jpg] Suspicious metamask warning', 96.0, 'Critical', 3),
-            ('TEXT', 'Hi mom, I will arrive home around 6 PM', 2.0, 'Low', 0),
-            ('URL', 'https://google.com', 0.0, 'Low', 1),
-            ('TEXT', 'Billing failure for Netflix subscription', 65.0, 'High', 2),
-            ('URL', 'http://netflix-billing-failed.club', 89.0, 'Critical', 4),
-            ('SCREENSHOT', '[Screenshot: test.jpg] Legitimate slack message', 10.0, 'Low', 5),
-        ]
-        
-        for scan_type, content, score, level, days_ago in mock_templates:
-            log = ScanLog(
-                user=user,
-                scan_type=scan_type,
-                input_content=content,
-                risk_score=score,
-                risk_level=level
-            )
-            log.save()
-            # Manually offset date
-            log.created_at = now - timedelta(days=days_ago)
-            log.save()
+        return Response(compute_dashboard_stats(user), status=status.HTTP_200_OK)
 
 
 class QuizQuestionView(APIView):
@@ -325,6 +243,18 @@ class FileAnalysisView(APIView):
         vt_key = os.environ.get("VIRUSTOTAL_API_KEY")
         engines_total = 1
         detections_count = 1 if is_dangerous else 0
+
+        # Defaults used when no VirusTotal key is configured, or the VT lookup fails/errors below.
+        # Honest "unscanned" state — never a fabricated malware verdict.
+        if is_dangerous:
+            threat_name = "Potentially Unwanted File Type (unverified — no scan engine configured)"
+            risk_score = 55.0
+            risk_level = "Medium"
+        else:
+            threat_name = "Unscanned — no verdict available"
+            risk_score = 0.0
+            risk_level = "Unknown"
+        sandbox_status = "Not scanned (VirusTotal API key not configured)"
 
         if vt_key:
             try:

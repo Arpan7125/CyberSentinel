@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
 import { Shield, Lock, Activity, User, KeyRound, Smartphone, Mail, ArrowRight, CheckCircle2 } from 'lucide-react';
+import GoogleSignInButton from '../../components/ui/GoogleSignInButton';
 
 export default function LoginPage() {
   const { login, requestOTP, loginWithOTP, googleLogin } = useAuth();
@@ -90,11 +91,11 @@ export default function LoginPage() {
     }
   };
 
-  const handleSocialLogin = async (provider) => {
+  const handleGoogleCredential = async (credential) => {
     setLoading(true);
     setError('');
     try {
-      const result = await googleLogin('mock_google_id_token', `${provider}_user@gmail.com`, 'Google Account User');
+      const result = await googleLogin(credential);
       const role = result?.user?.role || 'customer';
       if (role === 'admin' || result?.user?.is_admin) navigate('/admin');
       else navigate('/dashboard');
@@ -313,10 +314,8 @@ export default function LoginPage() {
               <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
             </div>
             
-            <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={() => handleSocialLogin('google')} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 12, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: 'var(--shadow-sm)' }}>
-                <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: 16, height: 16 }} /> Google Sign-In
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <GoogleSignInButton onCredential={handleGoogleCredential} onError={setError} />
             </div>
 
             <div style={{ textAlign: 'center', marginTop: 32, fontSize: 14, color: 'var(--text-secondary)' }}>
