@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
-import ParticleBackground from '../../components/ui/ParticleBackground';
+import AuthLayout from '../../components/ui/AuthLayout';
 import PasswordStrength, { generatePassword } from '../../components/ui/PasswordStrength';
 import GoogleSignInButton from '../../components/ui/GoogleSignInButton';
+import MicrosoftSignInButton from '../../components/ui/MicrosoftSignInButton';
 import { ShieldCheck, User, Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle2, Shield, Inbox } from 'lucide-react';
 
 export default function RegisterPage() {
@@ -41,7 +42,7 @@ export default function RegisterPage() {
     return null;
   };
 
-  const { register, googleLogin } = useAuth();
+  const { register, googleLogin, microsoftLogin } = useAuth();
 
   const handleStep1 = async (e) => {
     e.preventDefault();
@@ -50,8 +51,9 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     try {
-      const username = form.email.split('@')[0];
-      await register(username, form.email, form.password, form.confirmPassword);
+      const cleanEmail = form.email.trim().toLowerCase();
+      const username = cleanEmail.replace(/[^a-zA-Z0-9_]/g, '_');
+      await register(username, cleanEmail, form.password, form.confirmPassword);
       setStep(2);
     } catch (apiErr) {
       setError(apiErr.message || 'Registration failed. An account with this email may already exist.');
@@ -77,14 +79,21 @@ export default function RegisterPage() {
     }
   };
 
-  return (
-    <div className="auth-page">
-      <div className="auth-bg-effects">
-        <ParticleBackground />
-        <div className="auth-grid-lines" />
-      </div>
+  const handleMicrosoftCredential = async (credential) => {
+    setLoading(true);
+    setError('');
+    try {
+      await microsoftLogin(credential);
+      navigate('/dashboard');
+    } catch (err) {
+      setError(err.message || 'Microsoft sign-up failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      <div className="auth-container" style={{ maxWidth: step === 1 ? 440 : 440 }}>
+  return (
+    <AuthLayout>
         <div className="auth-card">
           <div className="auth-logo">
             <div className="auth-logo-icon"><ShieldCheck size={28} /></div>
@@ -178,8 +187,9 @@ export default function RegisterPage() {
                 <div className="auth-divider-line" />
               </div>
 
-              <div className="auth-social" style={{ display: 'flex', justifyContent: 'center' }}>
+              <div className="auth-social" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
                 <GoogleSignInButton onCredential={handleGoogleCredential} onError={setError} text="signup_with" />
+                <MicrosoftSignInButton onCredential={handleMicrosoftCredential} onError={setError} text="Sign up with Microsoft" />
               </div>
 
               <div className="auth-footer">
@@ -214,7 +224,6 @@ export default function RegisterPage() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }

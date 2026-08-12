@@ -11,8 +11,23 @@ import IntegrationsDashboard from './views/IntegrationsDashboard';
 import DashboardModule from './views/DashboardModule';
 import SystemHealthModule from './views/SystemHealthModule';
 import ApiIntegrationsPage from '../../pages/admin/ApiIntegrationsPage';
+import AnalyticsPage from '../../pages/admin/AnalyticsPage';
+import ThreatCenterPage from '../../pages/admin/ThreatCenterPage';
+import NotificationsPage from '../../pages/admin/NotificationsPage';
+import SettingsPage from '../../pages/admin/SettingsPage';
+import ContentPage from '../../pages/admin/ContentPage';
 import AdminWelcomeGuide from './AdminWelcomeGuide';
 import '../../assets/admin-workspace.css';
+
+/** Modules that render a full-width page rather than the list/detail split. */
+const PAGE_MODULES = {
+  'api-keys': ApiIntegrationsPage,
+  analytics: AnalyticsPage,
+  reports: ThreatCenterPage,
+  notifications: NotificationsPage,
+  settings: SettingsPage,
+  content: ContentPage,
+};
 
 function WorkspaceRouter() {
   const { activeModule } = useAdminWorkspace();
@@ -29,8 +44,21 @@ function WorkspaceRouter() {
     return <IntegrationsDashboard />;
   }
 
-  if (activeModule === 'api-keys') {
-    return <div style={{ padding: 32, overflowY: 'auto', flex: 1 }}><ApiIntegrationsPage /></div>;
+  if (activeModule === 'finance') {
+    return <FinanceDashboard />;
+  }
+
+  // Reports, Analytics, Content, Notifications and Settings each have a sidebar
+  // entry but were never wired to anything here, so selecting one dropped the
+  // admin into the generic list/detail panes — which hold no data for those
+  // modules and therefore rendered blank.
+  const PageModule = PAGE_MODULES[activeModule];
+  if (PageModule) {
+    return (
+      <div style={{ padding: 32, overflowY: 'auto', flex: 1 }}>
+        <PageModule />
+      </div>
+    );
   }
 
   return (

@@ -83,21 +83,27 @@ export default function ApiSandbox() {
 
   const getCodeSnippet = () => {
     const ep = endpoints[selectedEndpoint];
+
+    // Snippets must point at the API this build actually talks to. Emitting
+    // localhost from a deployed docs page hands the reader a URL that cannot work.
+    const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8000/api').replace(/\/api\/?$/, '');
+    const url = `${apiBase}${ep.path}`;
+
     if (selectedLang === 'curl') {
       if (selectedEndpoint === 'screenshot') {
-        return `curl -X POST http://localhost:8000${ep.path} \\\n  -F "image=@/path/to/screenshot.png"`;
+        return `curl -X POST ${url} \\\n  -F "image=@/path/to/screenshot.png"`;
       }
-      return `curl -X POST http://localhost:8000${ep.path} \\\n  -H "Content-Type: application/json" \\\n  -d '${payloadText.trim()}'`;
+      return `curl -X POST ${url} \\\n  -H "Content-Type: application/json" \\\n  -d '${payloadText.trim()}'`;
     } else if (selectedLang === 'js') {
       if (selectedEndpoint === 'screenshot') {
-        return `const formData = new FormData();\nformData.append("image", fileInput.files[0]);\n\nfetch("http://localhost:8000${ep.path}", {\n  method: "POST",\n  body: formData\n})\n.then(res => res.json())\n.then(data => console.log(data));`;
+        return `const formData = new FormData();\nformData.append("image", fileInput.files[0]);\n\nfetch("${url}", {\n  method: "POST",\n  body: formData\n})\n.then(res => res.json())\n.then(data => console.log(data));`;
       }
-      return `fetch("http://localhost:8000${ep.path}", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json"\n  },\n  body: JSON.stringify(${payloadText.trim()})\n})\n.then(res => res.json())\n.then(data => console.log(data));`;
+      return `fetch("${url}", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json"\n  },\n  body: JSON.stringify(${payloadText.trim()})\n})\n.then(res => res.json())\n.then(data => console.log(data));`;
     } else {
       if (selectedEndpoint === 'screenshot') {
-        return `import requests\n\nurl = "http://localhost:8000${ep.path}"\nfiles = {"image": open("screenshot.png", "rb")}\n\nresponse = requests.post(url, files=files)\nprint(response.json())`;
+        return `import requests\n\nurl = "${url}"\nfiles = {"image": open("screenshot.png", "rb")}\n\nresponse = requests.post(url, files=files)\nprint(response.json())`;
       }
-      return `import requests\nimport json\n\nurl = "http://localhost:8000${ep.path}"\npayload = ${payloadText.trim()}\nheaders = {"Content-Type": "application/json"}\n\nresponse = requests.post(url, data=json.dumps(payload), headers=headers)\nprint(response.json())`;
+      return `import requests\nimport json\n\nurl = "${url}"\npayload = ${payloadText.trim()}\nheaders = {"Content-Type": "application/json"}\n\nresponse = requests.post(url, data=json.dumps(payload), headers=headers)\nprint(response.json())`;
     }
   };
 

@@ -4,6 +4,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated, AllowAny
+
+from .throttles import AuthThrottle
 from rest_framework.authtoken.models import Token
 
 
@@ -24,6 +26,7 @@ class RegisterView(APIView):
     """Register a new user account."""
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
     
     def post(self, request):
         username = request.data.get('username', '').strip()
@@ -77,28 +80,36 @@ class LoginView(APIView):
     """Authenticate user and return auth token."""
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
     
     def post(self, request):
         from django.contrib.auth import authenticate
         
-        username = request.data.get('username', '').strip()
+        username_or_email = request.data.get('username', '').strip()
         password = request.data.get('password', '')
         
-        if not username or not password:
+        if not username_or_email or not password:
             return Response({'error': 'Username and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Support login by email
-        if '@' in username:
-            try:
-                user_obj = User.objects.get(email=username)
+        username = username_or_email
+        # Support login by email (case-insensitive)
+        if '@' in username_or_email:
+            user_obj = User.objects.filter(email__iexact=username_or_email).first()
+            if user_obj:
                 username = user_obj.username
-            except User.DoesNotExist:
-                return Response({'error': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
+            else:
+                return Response({'error': 'No account found with this email. Please check your spelling or sign up.'}, status=status.HTTP_401_UNAUTHORIZED)
         
         user = authenticate(username=username, password=password)
         
         if not user:
-            return Response({'error': 'Invalid credentials. Please try again.'}, status=status.HTTP_401_UNAUTHORIZED)
+            # Fallback for case-insensitive username lookup
+            user_obj = User.objects.filter(username__iexact=username_or_email).first()
+            if user_obj:
+                user = authenticate(username=user_obj.username, password=password)
+        
+        if not user:
+            return Response({'error': 'Invalid username/email or password. Please try again.'}, status=status.HTTP_401_UNAUTHORIZED)
         
         if not user.is_active:
             return Response({'error': 'Account is disabled.'}, status=status.HTTP_403_FORBIDDEN)
@@ -126,6 +137,7 @@ class AdminRegisterView(APIView):
     """Register a new admin and send them an Auth Key via email."""
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
     def post(self, request):
         import uuid
         from django.core.mail import send_mail
@@ -182,6 +194,7 @@ class AdminLoginView(APIView):
     """Login an admin using their email and Auth Key."""
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
     def post(self, request):
         from .models import AdminAuthKey
         from django.utils import timezone
@@ -310,6 +323,7 @@ class ForgotPasswordView(APIView):
     """Generate OTP and send via email for password reset."""
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
     
     def post(self, request):
         import random
@@ -354,6 +368,7 @@ class ResetPasswordView(APIView):
     """Verify OTP and reset password."""
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
     
     def post(self, request):
         from .models import PasswordResetOTP
@@ -396,6 +411,7 @@ class RequestOTPView(APIView):
     """Generate and send 6-digit OTP to user for direct OTP login."""
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
     
     def post(self, request):
         import random
@@ -443,6 +459,7 @@ class OTPLoginView(APIView):
     """Authenticate user with email and 6-digit OTP code."""
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
     
     def post(self, request):
         from .models import PasswordResetOTP
@@ -503,6 +520,7 @@ class GoogleLoginView(APIView):
     """
     authentication_classes = []
     permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
 
     def post(self, request):
         from django.conf import settings
@@ -568,6 +586,101 @@ class GoogleLoginView(APIView):
 
         return Response({
             'message': 'Google authentication successful!',
+            'token': auth_token.key,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'is_admin': user.is_staff or user.is_superuser
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class MicrosoftLoginView(APIView):
+    """
+    Verifies a real Microsoft Entra ID token (JWT) cryptographically against
+    Microsoft's published signing keys before trusting anything in it — same
+    contract as GoogleLoginView above. Email/name come ONLY from the verified
+    token payload, never from client-supplied fields.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [AuthThrottle]
+
+    def post(self, request):
+        from django.conf import settings
+
+        credential = (request.data.get('credential') or request.data.get('id_token') or '').strip()
+        if not credential:
+            return Response({'error': 'Microsoft credential is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not settings.MICROSOFT_CLIENT_ID:
+            return Response({'error': 'Microsoft sign-in is not configured on this server.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            import jwt
+            from jwt import PyJWKClient
+        except ImportError:
+            return Response({'error': 'Microsoft sign-in dependencies are not installed on the server.'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        jwks_url = f'https://login.microsoftonline.com/{settings.MICROSOFT_TENANT_ID}/discovery/v2.0/keys'
+        try:
+            signing_key = PyJWKClient(jwks_url).get_signing_key_from_jwt(credential)
+            payload = jwt.decode(
+                credential,
+                signing_key.key,
+                algorithms=['RS256'],
+                audience=settings.MICROSOFT_CLIENT_ID,
+                options={'require': ['exp', 'iat', 'aud']},
+            )
+        except jwt.PyJWTError:
+            return Response({'error': 'Invalid or expired Microsoft credential.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Multi-tenant issuers embed the actual tenant GUID, e.g.
+        # "https://login.microsoftonline.com/<tenant-guid>/v2.0" — verify the
+        # issuer is genuinely a Microsoft identity platform URL rather than
+        # pinning to one literal string.
+        issuer = payload.get('iss', '')
+        if not issuer.startswith('https://login.microsoftonline.com/'):
+            return Response({'error': 'Untrusted token issuer.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        email = (payload.get('email') or payload.get('preferred_username') or '').strip()
+        full_name = (payload.get('name') or '').strip()
+
+        if not email or '@' not in email:
+            return Response({'error': 'Unable to resolve Microsoft email address.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user_exists = User.objects.filter(email=email).exists()
+        if not user_exists:
+            username_base = email.split('@')[0]
+            username = username_base
+            counter = 1
+            while User.objects.filter(username=username).exists():
+                username = f"{username_base}_{counter}"
+                counter += 1
+
+            import secrets
+            rand_pass = secrets.token_hex(16)
+            user = User.objects.create_user(
+                username=username,
+                email=email,
+                password=rand_pass,
+                first_name=full_name.split()[0] if full_name else '',
+                last_name=' '.join(full_name.split()[1:]) if full_name and len(full_name.split()) > 1 else ''
+            )
+            from .models import UserIntegration
+            UserIntegration.objects.get_or_create(user=user)
+        else:
+            user = User.objects.get(email=email)
+
+        if not user.is_active:
+            return Response({'error': 'Account is disabled.'}, status=status.HTTP_403_FORBIDDEN)
+
+        auth_token, _ = Token.objects.get_or_create(user=user)
+        record_login(request, user)
+
+        return Response({
+            'message': 'Microsoft authentication successful!',
             'token': auth_token.key,
             'user': {
                 'id': user.id,

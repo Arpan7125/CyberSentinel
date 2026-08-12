@@ -8,13 +8,18 @@ class ScanLog(models.Model):
         ('TEXT', 'Email/SMS Text'),
         ('URL', 'URL Link'),
         ('SCREENSHOT', 'Screenshot OCR'),
+        ('FILE', 'File Upload'),
+        ('PHONE', 'Phone Number'),
     )
-    
+
     RISK_LEVELS = (
         ('Low', 'Low'),
         ('Medium', 'Medium'),
         ('High', 'High'),
         ('Critical', 'Critical'),
+        # Used when no scan engine could reach a verdict — deliberately distinct
+        # from 'Low' so an unscanned file is never reported as safe.
+        ('Unknown', 'Unknown'),
     )
 
     user = models.ForeignKey(
@@ -36,6 +41,13 @@ class ScanLog(models.Model):
         ordering = ['-created_at']
         verbose_name = "Scan Log"
         verbose_name_plural = "Scan Logs"
+        # Every dashboard/analytics query filters by owner and bucket by date.
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['risk_level']),
+            models.Index(fields=['scan_type']),
+        ]
 
     def __str__(self):
         return f"{self.scan_type} | {self.risk_level} ({self.risk_score}%) | {self.created_at.strftime('%Y-%m-%d %H:%M')}"

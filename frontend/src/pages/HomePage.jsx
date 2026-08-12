@@ -2,6 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import SEOHead, { schemas } from '../utils/seo';
 import ScrollReveal from '../components/ui/ScrollReveal';
+import Tilt3D from '../components/ui/Tilt3D';
+import HeroConsole from '../components/ui/HeroConsole';
 import { ShieldAlert, Mail, Monitor, Cloud, ShieldCheck, Lock } from 'lucide-react';
 
 const features = [
@@ -28,36 +30,46 @@ export default function HomePage() {
         <div className="hero-bg-effects">
           <div className="hero-gradient" />
           <div className="hero-grid-pattern" />
+          {/* Sized in % of the hero so the blur always finishes inside it. The
+              hero clips overflow, and a blurred edge cut by that clip renders as
+              a hard rectangular seam rather than a glow. */}
+          <div className="ambient-blob" style={{ width: '34%', height: '58%', top: '-8%', left: '-6%' }} />
+          <div className="ambient-blob" style={{ width: '30%', height: '54%', top: '6%', right: '-5%', animationDelay: '-9s' }} />
         </div>
-        <div className="pub-container hero-content" style={{ gridTemplateColumns: '1fr', textAlign: 'center' }}>
-          <div className="hero-text" style={{ alignItems: 'center', margin: '0 auto' }}>
+        <div className="pub-container hero-content">
+          <div className="hero-text">
             <ScrollReveal delay={0}>
               <div className="hero-badge"><ShieldCheck size={14} /> Enterprise-Grade Security</div>
             </ScrollReveal>
-            <ScrollReveal delay={100}>
-              <h1 className="hero-title" style={{ maxWidth: 800 }}>
+            <ScrollReveal delay={80}>
+              <h1 className="hero-title">
                 Cybersecurity That<br />
                 <span className="hero-gradient-text">Thinks Ahead</span>
               </h1>
             </ScrollReveal>
-            <ScrollReveal delay={200}>
-              <p className="hero-subtitle" style={{ maxWidth: 640 }}>
+            <ScrollReveal delay={160}>
+              <p className="hero-subtitle">
                 AI-powered threat intelligence, endpoint protection, and managed detection & response — unified in a single platform that detects threats before they become breaches.
               </p>
             </ScrollReveal>
-            <ScrollReveal delay={300}>
-              <div className="hero-actions" style={{ justifyContent: 'center' }}>
+            <ScrollReveal delay={240}>
+              <div className="hero-actions">
                 <Link to="/contact" className="btn-pub btn-pub-primary btn-pub-lg">Get a Free Demo</Link>
                 <Link to="/solutions" className="btn-pub btn-pub-ghost btn-pub-lg">Explore Solutions →</Link>
               </div>
             </ScrollReveal>
-            <ScrollReveal delay={400}>
-              <div className="hero-trust-text" style={{ justifyContent: 'center', marginTop: 16 }}>
-                <ShieldCheck size={16} style={{ color: 'var(--accent)' }} />
-                SOC 2 Type II Certified · ISO 27001 Compliant · GDPR Ready
+            <ScrollReveal delay={320}>
+              <div className="trust-badge-row" style={{ marginTop: 4 }}>
+                <span className="trust-badge"><ShieldCheck size={13} /> SOC 2 Type II Certified</span>
+                <span className="trust-badge"><ShieldCheck size={13} /> ISO 27001 Compliant</span>
+                <span className="trust-badge"><ShieldCheck size={13} /> GDPR Ready</span>
               </div>
             </ScrollReveal>
           </div>
+
+          <ScrollReveal className="hero-visual" delay={200}>
+            <HeroConsole />
+          </ScrollReveal>
         </div>
       </section>
 
@@ -71,14 +83,17 @@ export default function HomePage() {
               <p className="section-desc">From email inboxes to cloud infrastructure, CyberSentinel covers every attack surface with AI-powered detection and automated response.</p>
             </div>
           </ScrollReveal>
-          <div className="features-grid">
+          <div className="features-grid scene-3d">
             {features.map((f, i) => (
-              <ScrollReveal key={i} delay={i * 100}>
-                <div className="feature-card" style={{ height: '100%' }}>
-                  <div className="feature-icon" style={{ color: 'var(--accent)' }}>{f.icon}</div>
-                  <h3 className="feature-title">{f.title}</h3>
+              /* Stagger is capped: past ~6 cards a per-index delay leaves the
+                 last card arriving long after the reader has reached it. */
+              <ScrollReveal key={i} delay={Math.min(i, 5) * 70}>
+                <Tilt3D className="feature-card" style={{ height: '100%', position: 'relative' }}>
+                  <span className="tilt-3d-sheen" aria-hidden="true" />
+                  <div className="feature-icon" data-depth="2" style={{ color: 'var(--accent)' }}>{f.icon}</div>
+                  <h3 className="feature-title" data-depth="1">{f.title}</h3>
                   <p className="feature-desc">{f.desc}</p>
-                </div>
+                </Tilt3D>
               </ScrollReveal>
             ))}
           </div>

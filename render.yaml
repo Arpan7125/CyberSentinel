@@ -1,0 +1,98 @@
+# Render blueprint for the CyberSentinel backend.
+#
+# The frontend deploys separately to Vercel (see frontend/vercel.json), so this
+# file provisions only the API, its database, and its Redis instance.
+#
+# Apply with: Render Dashboard → New → Blueprint → point at this repository.
+#
+# Secrets marked `sync: false` are NOT stored here — set them in the Render
+# dashboard under Environment. Never commit real keys to this file.
+
+services:
+  - type: web
+    name: cybersentinel-api
+    runtime: python
+    plan: starter          # `free` also works, but sleeps after inactivity
+    region: oregon
+    rootDir: backend
+    buildCommand: ./build.sh
+    # Daphne, not gunicorn: the app serves WebSockets via Django Channels and a
+    # WSGI server would drop every one of them.
+    startCommand: daphne -b 0.0.0.0 -p $PORT cybersentinel_backend.asgi:application
+    healthCheckPath: /api/health/
+    autoDeploy: true
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # Django generates a strong value on first deploy and reuses it after.
+      - key: SECRET_KEY
+        generateValue: true
+
+      - key: DEBUG
+        value: "False"
+
+      # Render injects the service hostname automatically; settings.py appends
+      # it to ALLOWED_HOSTS, so this only needs a custom domain if you add one.
+      - key: ALLOWED_HOSTS
+        sync: false
+
+      # The deployed Vercel URL. Drives CORS, CSRF trust, and the OAuth
+      # redirect target. Example: https://cybersentinel.vercel.app
+      - key: FRONTEND_URL
+        sync: false
+
+      # Set to "true" to also accept Vercel's per-branch preview subdomains.
+      - key: ALLOW_VERCEL_PREVIEWS
+        value: "false"
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cybersentinel-db
+          property: connectionString
+
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: cybersentinel-redis
+          property: connectionString
+
+      - key: LOG_LEVEL
+        value: INFO
+
+      # ── Secrets: set these in the Render dashboard ───────────────────────
+      - key: VIRUSTOTAL_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REDIRECT_URI
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: EMAIL_HOST
+        value: smtp.gmail.com
+      - key: EMAIL_PORT
+        value: "587"
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: IPQS_API_KEY
+        sync: false
+
+  # Redis is a service on Render, not a database entry. It backs the Channels
+  # layer so WebSocket broadcasts reach every worker.
+  - type: redis
+    name: cybersentinel-redis
+    plan: starter
+    region: oregon
+    ipAllowList: []        # Reachable only from inside the Render network
+
+databases:
+  - name: cybersentinel-db
+    plan: basic-256mb
+    region: oregon
+    postgresMajorVersion: "16"

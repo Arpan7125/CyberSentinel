@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../AuthContext';
+import { authService, configService } from '../services/api';
 import { Shield, X } from 'lucide-react';
 
 export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
@@ -34,42 +35,48 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
   const [newPassword, setNewPassword] = useState('');
   const [devOtp, setDevOtp] = useState('');
 
-  // Public configurations from backend
+  // Public configuration from the backend. The client ID is served by the
+  // platform's own settings; there is deliberately no hard-coded fallback,
+  // because a stale ID baked into the bundle fails at click time with an error
+  // the user cannot act on.
   const [gmailClientId, setGmailClientId] = useState('');
+  const [googleConfigured, setGoogleConfigured] = useState(false);
+  const [microsoftClientId, setMicrosoftClientId] = useState('');
+  const [microsoftConfigured, setMicrosoftConfigured] = useState(false);
+  const [microsoftLoading, setMicrosoftLoading] = useState(false);
 
-  // Fetch public credentials on mount
   useEffect(() => {
-    if (isOpen) {
-      fetch('http://localhost:8000/api/config/public/')
-        .then(res => res.ok ? res.json() : null)
-        .then(data => {
-          if (data) {
-            setGmailClientId(data.gmail_client_id || '');
-          }
-        })
-        .catch(() => {});
-    }
+    if (!isOpen) return;
+    configService
+      .publicConfig()
+      .then((data) => {
+        setGmailClientId(data?.gmail_client_id || '');
+        setGoogleConfigured(Boolean(data?.google_oauth_configured));
+        setMicrosoftClientId(data?.microsoft_client_id || '');
+        setMicrosoftConfigured(Boolean(data?.microsoft_oauth_configured));
+      })
+      .catch(() => {
+        setGmailClientId('');
+        setGoogleConfigured(false);
+        setMicrosoftClientId('');
+        setMicrosoftConfigured(false);
+      });
   }, [isOpen]);
 
-  // Handle JWT token callback from real Google Sign-In
+  // Handle the signed JWT credential returned by Google Identity Services. The
+  // backend verifies it against Google's public keys before trusting anything
+  // inside it.
   const handleGoogleCredentialResponse = useCallback(async (response) => {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/auth/google-login/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: response.credential })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Google login failed');
-      
+      const data = await authService.googleLogin(response.credential);
       localStorage.setItem('cs_token', data.token);
       setToken(data.token);
       setUser(data.user);
       onClose();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Google login failed.');
     } finally {
       setLoading(false);
     }
@@ -78,14 +85,10 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
   // Load and mount the real Google Sign-In SDK button
   useEffect(() => {
     /* global google */
-    if (isOpen && activeTab !== 'forgot' && typeof google !== 'undefined') {
-      const activeClientId = gmailClientId && !gmailClientId.includes('YOUR_GOOGLE_CLIENT_ID')
-        ? gmailClientId
-        : '965152865955-h6dpsf7v1f2d65jebvcrv0m8bkr9i4f2.apps.googleusercontent.com'; // Default client ID for fallback
-
+    if (isOpen && activeTab !== 'forgot' && gmailClientId && typeof google !== 'undefined') {
       try {
         google.accounts.id.initialize({
-          client_id: activeClientId,
+          client_id: gmailClientId,
           callback: handleGoogleCredentialResponse,
           auto_select: false,
           cancel_on_tap_outside: true
@@ -108,24 +111,38 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
     }
   }, [isOpen, activeTab, gmailClientId, handleGoogleCredentialResponse]);
 
-  // Mock Developer Sandbox Google login helper
-  const handleMockGoogleLogin = () => {
-    setLoading(true);
-    setTimeout(() => {
-      const mockToken = 'mock_google_token_' + Math.random().toString(36).substring(7);
-      const mockUser = {
-        username: 'sandbox_google_user',
-        email: 'sandbox_user@gmail.com',
-        is_admin: false
-      };
-      
-      localStorage.setItem('cs_token', mockToken);
-      setToken(mockToken);
-      setUser(mockUser);
-      setLoading(false);
+  // Sign in with Microsoft via MSAL's public-client popup flow (auth code +
+  // PKCE — no client secret in the browser). The resulting ID token is a
+  // signed JWT; the backend verifies it against Microsoft's public keys
+  // before trusting anything inside it, same as the Google flow above.
+  const handleMicrosoftLogin = useCallback(async () => {
+    /* global msal */
+    if (typeof msal === 'undefined' || !microsoftClientId) return;
+    setError('');
+    setMicrosoftLoading(true);
+    try {
+      const msalInstance = new msal.PublicClientApplication({
+        auth: {
+          clientId: microsoftClientId,
+          authority: 'https://login.microsoftonline.com/common',
+          redirectUri: window.location.origin,
+        },
+      });
+      await msalInstance.initialize();
+      const response = await msalInstance.loginPopup({ scopes: ['openid', 'profile', 'email'] });
+      const data = await authService.microsoftLogin(response.idToken);
+      localStorage.setItem('cs_token', data.token);
+      setToken(data.token);
+      setUser(data.user);
       onClose();
-    }, 1200);
-  };
+    } catch (err) {
+      if (err?.errorCode !== 'user_cancelled') {
+        setError(err.message || 'Microsoft login failed.');
+      }
+    } finally {
+      setMicrosoftLoading(false);
+    }
+  }, [microsoftClientId, onClose, setToken, setUser]);
 
   if (!isOpen) return null;
 
@@ -166,15 +183,10 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/auth/forgot-password/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to dispatch reset code.');
-      
-      setDevOtp(data.otp);
+      const data = await authService.forgotPassword(email);
+      // `otp` is only present when the server is running with a console email
+      // backend; in production the code arrives by email and this stays unset.
+      setDevOtp(data?.otp || '');
       setForgotStep(2);
     } catch (err) {
       setError(err.message);
@@ -188,14 +200,7 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/auth/reset-password/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp, new_password: newPassword })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Reset verification failed.');
-      
+      await authService.resetPassword({ email, otp, new_password: newPassword });
       setSuccess('Password updated successfully! Please sign in.');
       setActiveTab('login');
       setForgotStep(1);
@@ -483,8 +488,12 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
           </div>
         )}
 
-        {/* ── Social Google Authentication ───────────────────────────────────── */}
-        {activeTab !== 'forgot' && (
+        {/* ── Google sign-in ──────────────────────────────────────────────────
+            Rendered only when the server reports Google OAuth as configured.
+            The previous "Bypass via Sandbox" link minted a fake local token and
+            a fake user object, which would have shipped a working auth bypass
+            to production. There is no client-side path to a session here. */}
+        {activeTab !== 'forgot' && (googleConfigured || microsoftConfigured) && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0' }}>
               <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
@@ -492,22 +501,33 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
               <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
             </div>
 
-            {/* Real Google Sign In container */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-              <div id="google-signin-btn-container" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}></div>
-              
-              {/* Optional Sandbox Fallback */}
+              {googleConfigured && (
+                <div id="google-signin-btn-container" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}></div>
+              )}
+              {microsoftConfigured && (
                 <button
                   type="button"
-                  onClick={handleMockGoogleLogin}
+                  onClick={handleMicrosoftLogin}
+                  disabled={microsoftLoading}
                   style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500,
-                    textDecoration: 'underline'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    width: '100%', padding: '10px 16px', borderRadius: 999,
+                    border: '1px solid var(--border-input)', background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)', fontSize: 14, fontWeight: 600,
+                    cursor: microsoftLoading ? 'not-allowed' : 'pointer', opacity: microsoftLoading ? 0.6 : 1,
+                    transition: 'background 0.2s'
                   }}
                 >
-                  Bypass via Sandbox
+                  <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+                    <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+                    <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+                    <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+                    <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+                  </svg>
+                  {microsoftLoading ? 'Signing in…' : 'Sign in with Microsoft'}
                 </button>
+              )}
             </div>
           </>
         )}

@@ -1,242 +1,676 @@
+"""Phishing / scam text classifier.
+
+Design notes:
+
+* **Word *and* character n-grams.** Character n-grams catch the obfuscation
+  tricks word tokens miss entirely — `paypa1`, `g00gle`, `amaz0n-security`,
+  spaced-out `V E R I F Y`. Words alone treat each of those as a brand-new,
+  unseen token carrying no weight.
+
+* **Calibrated probabilities.** A bare LogisticRegression's `predict_proba` is
+  reported to the user as a percentage risk score, so it needs to actually mean
+  something. Cross-validated calibration keeps "82%" closer to an honest 82%.
+
+* **Persisted to disk.** Training on every worker boot wasted startup time and
+  meant two workers could disagree if the corpus ever changed between them. The
+  fitted pipeline is cached and reloaded, keyed by a hash of the corpus so an
+  edit to the training data invalidates the cache automatically.
+
+* **Model score fused with rules.** The learned model generalises; the explicit
+  rule overlays catch high-confidence patterns (seed-phrase requests, executable
+  attachments, brand-mimicking domains) that a corpus this size cannot cover on
+  its own. Neither is trusted alone.
+"""
+
+import hashlib
+import logging
 import re
+import threading
+
 import numpy as np
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
+from sklearn.model_selection import cross_val_score
+from sklearn.pipeline import FeatureUnion, Pipeline
 
-# Curated inline training dataset representing common phishing/scam patterns and legitimate emails/SMS.
-TRAINING_DATA = [
-    # Phishing / Scam (Label 1)
-    ("URGENT: Your bank account has been suspended due to suspicious activity. Verify now at http://secure-bank-login.net", 1),
-    ("Dear customer, we detected an unauthorized login attempt from Russia. If this wasn't you, reset your password immediately at https://security-verification-net.com/login", 1),
-    ("CONGRATULATIONS! You have won a $1,000 Walmart Gift Card! Claim your reward now by clicking here: http://win-giftcard.xyz", 1),
-    ("Your Netflix account payment failed. Please update your billing information within 24 hours to avoid suspension: http://netflix-billing-update.com", 1),
-    ("NOTICE: Your package could not be delivered due to incomplete address. Pay the redirection fee of $1.50 at http://usps-redirection.info", 1),
-    ("Tax refund alert: You are eligible for a tax refund of $432.10. Claim your credit immediately by filling out this form: http://irs-refund-portal.org", 1),
-    ("URGENT security alert for your crypto wallet. Upgrade to the new secure protocol to protect your assets: http://metamask-security.co", 1),
-    ("Your Apple ID has been locked for security reasons. Unlock your profile now by verifying your credentials: http://apple-verification-support.com", 1),
-    ("Hey! I saw your profile and liked you. Check out my photos here and message me: http://scam-dating-link.xyz/pics", 1),
-    ("Get rich quick! Invest $100 in our automated Bitcoin trading bot and earn $5000 daily guaranteed. Join now at http://quick-crypto-earn.club", 1),
-    ("Your credit card has been charged $1,250.00 for Amazon purchases. If you did not make this transaction, dispute it immediately: http://amazon-dispute-portal.net", 1),
-    ("Your Microsoft password expires today. Keep the same password by confirming your corporate login here: http://microsoft-login-verify.com", 1),
-    ("ALERT: Critical security patch required for your account. Download and run the attachment patch.exe immediately.", 1),
-    ("Immediate action required: Confirm your social security number to reactivate your employee benefits profile.", 1),
-    ("We have hacked your webcam and have embarrassing recordings. Pay $500 in Bitcoin to this address or we will release them to your contacts.", 1),
-    ("Verify your identity immediately to prevent permanent account deletion. Click here to confirm: http://verify-identity-link.com", 1),
-    ("Dear client, your PayPal invoice #4829 for $599.99 is ready. Click here to cancel if this was a mistake: http://paypal-billing-cancel.com", 1),
-    ("Congratulations! Your resume was selected for a remote work-from-home position earning $80/hr. Deposit the setup fee at http://job-setup-pay.org", 1),
-    ("Alert: Your UPS package is held at our warehouse. Click the link to pay outstanding duties: http://ups-delivery-duty.com", 1),
-    ("Urgent security patch: Chrome browser has a critical vulnerability. Click here to install update now: http://chrome-update-safety.net", 1),
-    
-    # Legitimate (Label 0)
-    ("Hi team, just a reminder that our weekly progress meeting is scheduled for tomorrow at 10:00 AM in the main conference room.", 0),
-    ("Hey Joshua, are we still on for lunch today at 1 PM? Let me know if you want to try that new Italian place down the street.", 0),
-    ("Your order #1029384 has been shipped and is on its way. You can track your package details on our official portal.", 0),
-    ("Thanks for subscribing to our newsletter! You will receive weekly updates regarding software development, React, and Django.", 0),
-    ("Hi, I completed the code reviews for the pull request. Let's merge it once the CI/CD pipeline builds successfully.", 0),
-    ("Here is the updated project budget spreadsheet. Let me know if you have any questions or feedback before the board meeting.", 0),
-    ("Dear candidate, thank you for interviewing with us. We are pleased to extend a job offer for the Software Engineer role.", 0),
-    ("Your monthly electricity bill is now available. Log in to your utility portal to view the statement and make a payment.", 0),
-    ("Happy birthday, Joshua! Wishing you a wonderful day filled with joy, laughter, and success. Hope to catch up soon!", 0),
-    ("Hi Arpan, can you please double-check the database migration script? I want to make sure it doesn't drop the production schema.", 0),
-    ("The draft for the CyberSentinel documentation is ready. Let's review the abstract and introduction sections this afternoon.", 0),
-    ("Hi, this is a automated notification that your password has been successfully changed. If you did this, no action is needed.", 0),
-    ("Hello, your dental checkup appointment is confirmed for Friday, June 26th at 3:30 PM. Please arrive 10 minutes early.", 0),
-    ("Your flight ticket to Chicago is confirmed. Flight details: AA-2409, departing 8:45 AM. Boarding pass is available in your app.", 0),
-    ("Dear customer, your bank statement for May 2026 is now ready for download. Log in securely to your online banking portal.", 0),
-    ("Hi Merry, can you share the training metrics of the new XGBoost model? I want to add them to our final presentation slides.", 0),
-    ("Hi, please find attached the receipts from our business trip last week. Let me know if you need any other documents for reimbursement.", 0),
-    ("Your subscription to the cybersecurity newsletter has been successfully renewed. Thank you for your continued support.", 0),
-    ("Hello, the library books you requested are now ready for pickup. Please collect them by next Tuesday.", 0),
-    ("Hey, could you help me move this weekend? I need to carry some heavy furniture. I'll buy pizza and drinks for everyone!", 0),
+from .training_data import TRAINING_DATA
+
+logger = logging.getLogger(__name__)
+
+MODEL_VERSION = '2.0'
+
+# ── Rule overlays ───────────────────────────────────────────────────────────
+
+URGENCY_KEYWORDS = [
+    'urgent', 'immediately', 'suspension', 'suspend', 'action required',
+    'expires today', 'unauthorized', 'locked', 'billing failed', 'final notice',
+    'within 24 hours', 'within 12 hours', 'last chance', 'act now', 'do not delay',
+    'avoid arrest', 'permanently deleted', 'will be closed',
 ]
 
+FINANCIAL_KEYWORDS = [
+    'gift card', 'won', 'lottery', 'bitcoin', 'crypto', 'rich', 'refund',
+    'credit', 'invoice', 'fee', 'charged', 'claim', 'prize', 'payout',
+    'wire transfer', 'processing fee', 'guaranteed returns', 'investment',
+]
+
+CREDENTIAL_KEYWORDS = [
+    'verify now', 'reset your password', 'confirm identity', 'credentials',
+    'login', 'signin', 'social security', 'identity verification',
+    'seed phrase', 'recovery phrase', 'one-time code', 'otp', 'pin number',
+    'routing number', 'card number', 'cvv',
+]
+
+#: Extensions that should never arrive unannounced in a message.
+DANGEROUS_ATTACHMENTS = [
+    '.exe', '.scr', '.bat', '.cmd', '.vbs', '.js', '.jar', '.msi',
+    '.docm', '.xlsm', '.htm', '.html', '.iso', '.lnk',
+]
+
+#: TLDs that are disproportionately represented in abuse feeds.
+SUSPICIOUS_TLDS = [
+    '.xyz', '.club', '.info', '.work', '.click', '.cc', '.live', '.top',
+    '.buzz', '.rest', '.gq', '.tk', '.ml', '.cf', '.zip', '.mov',
+]
+
+#: Brands whose names appearing in a *hyphenated* domain almost always signal
+#: impersonation — the real brand serves from its own apex domain.
+IMPERSONATED_BRANDS = [
+    'paypal', 'netflix', 'apple', 'amazon', 'microsoft', 'google', 'meta',
+    'facebook', 'instagram', 'whatsapp', 'coinbase', 'metamask', 'binance',
+    'usps', 'ups', 'fedex', 'dhl', 'hmrc', 'irs', 'chase', 'wellsfargo',
+]
+
+#: Patterns that are near-conclusive on their own.
+HIGH_CONFIDENCE_PATTERNS = [
+    (r'\b(seed|recovery|mnemonic)\s+phrase\b', 'Seed Phrase Request',
+     'Asks for a crypto wallet recovery phrase. No legitimate service ever does this.'),
+    (r'\b12[- ]word\b', 'Seed Phrase Request',
+     'Requests a 12-word wallet recovery phrase — always fraudulent.'),
+    (r'\bgift\s*cards?\b.{0,60}\b(code|pay|send|purchase|buy)\b', 'Gift Card Payment Demand',
+     'Requests payment in gift cards, a hallmark of scams because it is irreversible.'),
+    (r'\b(send|transfer|pay).{0,30}\b(bitcoin|btc|crypto|usdt)\b', 'Crypto Payment Demand',
+     'Demands payment in cryptocurrency, which cannot be recovered once sent.'),
+    (r'\benable\s+macros?\b', 'Macro-Enabled Attachment',
+     'Asks you to enable macros, a common malware delivery route.'),
+    (r'\bremote\s+access\b', 'Remote Access Request',
+     'Requests remote control of your device — a standard tech-support scam step.'),
+]
+
+
+#: Apex domains whose links are evidence *for* legitimacy. Matched strictly on
+#: the apex — `amazon.com` matches `www.amazon.com` but never
+#: `amazon.com.verify-login.xyz`, which is the whole point of the check.
+REPUTABLE_DOMAINS = {
+    'amazon.com', 'apple.com', 'google.com', 'microsoft.com', 'office.com',
+    'live.com', 'outlook.com', 'paypal.com', 'netflix.com', 'spotify.com',
+    'github.com', 'gitlab.com', 'linkedin.com', 'slack.com', 'zoom.us',
+    'dropbox.com', 'stripe.com', 'atlassian.com', 'notion.so', 'figma.com',
+    'usps.com', 'ups.com', 'fedex.com', 'dhl.com', 'royalmail.com',
+    'gov.uk', 'irs.gov', 'nhs.uk', 'wikipedia.org', 'mozilla.org',
+}
+
+
+def _apex_matches(host, domain):
+    """True when `host` is `domain` itself or a subdomain of it."""
+    host = host.split(':')[0].strip('.')
+    return host == domain or host.endswith(f'.{domain}')
+
+
+#: URL findings that condemn a message on their own, regardless of its wording.
+CONCLUSIVE_URL_FINDINGS = {'Brand Impersonation Domain', 'Raw IP Address Link'}
+
+#: Below this model probability the message is treated as confidently
+#: legitimate and the merely-suggestive keyword rules are suppressed. Real
+#: receipts and delivery notices are full of words like "refund" and "invoice";
+#: letting those alone force a Medium verdict trains users to ignore warnings.
+CONTEXTUAL_RULE_FLOOR = 0.25
+
+#: Cache of compiled keyword matchers, built once per keyword list.
+_KEYWORD_PATTERNS = {}
+
+
+def _matches_any(lowered, keywords):
+    """Word-boundary keyword match.
+
+    Substring matching would fire on fragments inside unrelated words, so every
+    keyword is anchored. Multi-word keywords are matched as phrases.
+    """
+    key = id(keywords)
+    pattern = _KEYWORD_PATTERNS.get(key)
+    if pattern is None:
+        joined = '|'.join(re.escape(kw) for kw in keywords)
+        pattern = re.compile(rf'(?<!\w)(?:{joined})(?!\w)')
+        _KEYWORD_PATTERNS[key] = pattern
+    return bool(pattern.search(lowered))
+
+
+def _corpus_fingerprint():
+    """Stable hash of the corpus, so editing training data busts the cache."""
+    digest = hashlib.sha256()
+    digest.update(MODEL_VERSION.encode('utf-8'))
+    for text, label in TRAINING_DATA:
+        digest.update(f'{label}|{text}'.encode('utf-8'))
+    return digest.hexdigest()[:16]
+
+
+def _build_pipeline():
+    """Word + character n-gram union feeding a calibrated linear model."""
+    features = FeatureUnion([
+        ('word', TfidfVectorizer(
+            analyzer='word',
+            ngram_range=(1, 2),
+            sublinear_tf=True,
+            min_df=1,
+            lowercase=True,
+            token_pattern=r'(?u)\b\w+\b',
+        )),
+        # Character n-grams span word boundaries, so obfuscated and hyphenated
+        # brand impersonations still land near their legitimate spellings.
+        ('char', TfidfVectorizer(
+            analyzer='char_wb',
+            ngram_range=(3, 5),
+            sublinear_tf=True,
+            min_df=1,
+            lowercase=True,
+        )),
+    ])
+
+    base = LogisticRegression(C=4.0, solver='liblinear', class_weight='balanced')
+
+    return Pipeline([
+        ('features', features),
+        # 5 folds keeps each calibration split large enough to be meaningful on
+        # a corpus this size; sigmoid suits the small-sample regime better than
+        # isotonic, which overfits when folds are small.
+        ('clf', CalibratedClassifierCV(base, method='sigmoid', cv=5)),
+    ])
+
+
 class PhishingClassifier:
+    """Thread-safe singleton wrapper around the fitted pipeline."""
+
     def __init__(self):
-        self.pipeline = Pipeline([
-            ('tfidf', TfidfVectorizer(
-                ngram_range=(1, 2),
-                stop_words='english',
-                lowercase=True,
-                token_pattern=r'(?u)\b\w+\b'
-            )),
-            ('clf', LogisticRegression(C=5.0, solver='liblinear'))
-        ])
+        self._lock = threading.Lock()
+        self.pipeline = None
         self.trained = False
+        self.feature_weights = {}
+        self.metrics = {}
+        self.fingerprint = _corpus_fingerprint()
+        self._load_or_train()
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────
+
+    def _model_path(self):
+        try:
+            from django.conf import settings
+            path = settings.ML_MODEL_PATH
+            path.parent.mkdir(parents=True, exist_ok=True)
+            return path
+        except Exception:
+            # Usable outside a configured Django process (scripts, notebooks).
+            return None
+
+    def _load_or_train(self):
+        path = self._model_path()
+
+        if path and path.exists():
+            try:
+                import joblib
+                payload = joblib.load(path)
+                if payload.get('fingerprint') == self.fingerprint:
+                    self.pipeline = payload['pipeline']
+                    self.feature_weights = payload.get('feature_weights', {})
+                    self.metrics = payload.get('metrics', {})
+                    self.trained = True
+                    logger.info('Loaded cached phishing model (%s)', self.fingerprint)
+                    return
+                logger.info('Cached model is stale — corpus changed, retraining.')
+            except Exception:
+                logger.exception('Could not load the cached model; retraining.')
+
         self.train_model()
 
     def train_model(self):
-        texts = [item[0] for item in TRAINING_DATA]
-        labels = [item[1] for item in TRAINING_DATA]
-        
-        # Add some variation by expanding vocabulary dynamically
-        self.pipeline.fit(texts, labels)
-        self.trained = True
-        
-        # Cache top keywords for quick explanation lookup
-        feature_names = self.pipeline.named_steps['tfidf'].get_feature_names_out()
-        coefficients = self.pipeline.named_steps['clf'].coef_[0]
-        self.feature_weights = dict(zip(feature_names, coefficients))
+        with self._lock:
+            texts = [item[0] for item in TRAINING_DATA]
+            labels = [item[1] for item in TRAINING_DATA]
+
+            pipeline = _build_pipeline()
+            pipeline.fit(texts, labels)
+
+            self.pipeline = pipeline
+            self.feature_weights = self._extract_word_weights(texts, labels)
+            self.metrics = self._evaluate(texts, labels)
+            self.trained = True
+
+            logger.info(
+                'Trained phishing model v%s on %d samples (cv accuracy %.3f)',
+                MODEL_VERSION, len(texts), self.metrics.get('cv_accuracy', 0.0),
+            )
+            self._persist()
+
+    def _persist(self):
+        path = self._model_path()
+        if not path:
+            return
+        try:
+            import joblib
+            joblib.dump({
+                'fingerprint': self.fingerprint,
+                'pipeline': self.pipeline,
+                'feature_weights': self.feature_weights,
+                'metrics': self.metrics,
+                'version': MODEL_VERSION,
+            }, path)
+            logger.info('Cached phishing model to %s', path)
+        except Exception:
+            # A read-only filesystem is fine — it just means retraining per boot.
+            logger.warning('Could not cache the trained model to disk.', exc_info=True)
+
+    def _evaluate(self, texts, labels):
+        """Cross-validated quality figures, surfaced so the number is auditable."""
+        try:
+            scores = cross_val_score(
+                _build_pipeline(), texts, labels, cv=5, scoring='accuracy'
+            )
+            return {
+                'cv_accuracy': float(round(scores.mean(), 4)),
+                'cv_std': float(round(scores.std(), 4)),
+                'training_samples': len(texts),
+                'phishing_samples': int(sum(labels)),
+                'legitimate_samples': int(len(labels) - sum(labels)),
+            }
+        except Exception:
+            logger.warning('Cross-validation failed; reporting sample counts only.', exc_info=True)
+            return {'training_samples': len(texts)}
+
+    def _extract_word_weights(self, texts, labels):
+        """Per-word phishing association, used to explain a verdict.
+
+        The calibrated model wraps its estimators, so a separate lightweight
+        word-level model is fitted purely to produce interpretable weights.
+        """
+        try:
+            explainer = Pipeline([
+                ('tfidf', TfidfVectorizer(
+                    analyzer='word', ngram_range=(1, 1), lowercase=True,
+                    token_pattern=r'(?u)\b\w+\b',
+                )),
+                ('clf', LogisticRegression(C=5.0, solver='liblinear', class_weight='balanced')),
+            ])
+            explainer.fit(texts, labels)
+            names = explainer.named_steps['tfidf'].get_feature_names_out()
+            coefs = explainer.named_steps['clf'].coef_[0]
+            return {name: float(coef) for name, coef in zip(names, coefs)}
+        except Exception:
+            logger.exception('Could not build the explanation model.')
+            return {}
+
+    # ── Inference ──────────────────────────────────────────────────────────
 
     def analyze_text(self, text):
         if not text or not isinstance(text, str) or not text.strip():
             return {
-                "risk_score": 0.0,
-                "risk_level": "Low",
-                "threat_indicators": [],
-                "highlighted_words": [],
-                "recommendations": ["Please enter text to analyze for security threats."]
+                'risk_score': 0.0,
+                'risk_level': 'Low',
+                'confidence': 0.0,
+                'threat_indicators': [],
+                'highlighted_words': [],
+                'recommendations': ['Please enter text to analyze for security threats.'],
+                'model_version': MODEL_VERSION,
             }
 
         if not self.trained:
             self.train_model()
 
-        # Clean text basic normalization
-        cleaned_text = text.lower()
-        
-        # Predict probability
-        prob = self.pipeline.predict_proba([text])[0][1] # Probability of label 1 (Phishing)
-        risk_score = float(round(prob * 100, 2))
-        
-        # Classify risk level
-        if risk_score < 30:
-            risk_level = "Low"
-        elif risk_score < 50:
-            risk_level = "Medium"
-        elif risk_score < 80:
-            risk_level = "High"
+        lowered = text.lower()
+
+        model_probability = float(self.pipeline.predict_proba([text])[0][1])
+
+        # Rules come in two tiers, and the distinction matters a great deal for
+        # false positives. Conclusive rules describe things no legitimate
+        # message does (asking for a seed phrase, a bare-IP link, an .exe), so
+        # they override the model outright. Contextual rules describe wording
+        # that is merely *common* in scams — "refund", "invoice", "urgent" —
+        # which real delivery notices and receipts use constantly. Applying
+        # those unconditionally pushed every genuine receipt to Medium, so they
+        # are suppressed when the model is confident the message is legitimate.
+        conclusive_score, conclusive = self._conclusive_rules(text, lowered)
+        contextual_score, contextual = self._contextual_rules(text, lowered)
+
+        model_pct = model_probability * 100.0
+        blended = max(model_pct, conclusive_score)
+
+        if model_probability >= CONTEXTUAL_RULE_FLOOR:
+            blended = max(blended, contextual_score)
+            indicators = conclusive + contextual
         else:
-            risk_level = "Critical"
+            # Confidently legitimate: keep only informational notes.
+            indicators = conclusive + [i for i in contextual if i['severity'] == 'Low']
 
-        # Highlight words and extract indicators
-        threat_indicators = []
-        highlighted_words = []
-        recommendations = [
-            "Do not click on any links in this message.",
-            "Verify the sender's identity through another channel.",
-            "Do not share passwords, pins, or personal data.",
-            "Report this message to your security team."
-        ]
+        # Independent signals agreeing is itself evidence.
+        if model_probability > 0.5 and max(conclusive_score, contextual_score) > 50:
+            blended = min(99.0, blended + 8.0)
 
-        # Explicit keywords check (rule-based overlays)
-        urgent_keywords = ["urgent", "immediately", "suspension", "suspend", "action required", "expires today", "unauthorized", "locked", "billing failed"]
-        financial_keywords = ["gift card", "won", "lottery", "bitcoin", "crypto", "rich", "refund", "credit", "invoice", "fee", "charged", "claim"]
-        credential_keywords = ["verify now", "reset your password", "confirm identity", "credentials", "login", "signin", "social security", "identity verification"]
-        link_keywords = ["http://", "https://", "click here", "link"]
-
-        has_urgency = any(kw in cleaned_text for kw in urgent_keywords)
-        has_finance = any(kw in cleaned_text for kw in financial_keywords)
-        has_credentials = any(kw in cleaned_text for kw in credential_keywords)
-        has_suspicious_links = re.search(r'https?://[^\s]+', cleaned_text) is not None
-
-        if has_urgency:
-            threat_indicators.append({
-                "type": "Urgency",
-                "severity": "High",
-                "description": "Urgent language or false deadlines designed to induce panic and force fast action."
+        # Domain reputation, applied last. If every link in the message resolves
+        # to a well-known apex domain and nothing conclusive fired, the message
+        # is very unlikely to be an attack — an attacker cannot host their
+        # landing page on amazon.com. This is the only path that lowers a score,
+        # and it is deliberately blocked whenever a conclusive rule matched.
+        if conclusive_score == 0 and self._all_links_reputable(text):
+            blended = min(blended * 0.45, 30.0)
+            indicators.append({
+                'type': 'Verified Destination Domain',
+                'severity': 'Low',
+                'description': (
+                    'Every link in this message points at a well-known, legitimate '
+                    'domain rather than a lookalike.'
+                ),
             })
-        if has_finance:
-            threat_indicators.append({
-                "type": "Financial Bait",
-                "severity": "Medium",
-                "description": "Mentions of lottery wins, gift cards, invoices, refunds, or crypto investments."
-            })
-        if has_credentials:
-            threat_indicators.append({
-                "type": "Credential Harvesting",
-                "severity": "Critical",
-                "description": "Direct requests to confirm identities, reset passwords, or enter login credentials."
-            })
-        if has_suspicious_links:
-            # Check if domain looks suspicious
-            urls = re.findall(r'https?://([^\s/]+)', cleaned_text)
-            suspicious_domains = False
-            for url in urls:
-                # Basic check for suspicious TLDs or missing common domains
-                if any(url.endswith(tld) for tld in ['.xyz', '.club', '.info', '.work', '.click', '.cc', '.live']):
-                    suspicious_domains = True
-                # Mimicking checks
-                if any(x in url for x in ['paypa1', 'netflix-', 'apple-verification', 'amazon-dispute', 'microsoft-login']):
-                    suspicious_domains = True
-            
-            if suspicious_domains:
-                threat_indicators.append({
-                    "type": "Suspicious Destination Domain",
-                    "severity": "Critical",
-                    "description": "URLs in this message lead to non-standard domains or mimic known brands."
-                })
-            else:
-                threat_indicators.append({
-                    "type": "Hyperlink Present",
-                    "severity": "Low",
-                    "description": "Contains clickable links. Verify links carefully before clicking."
-                })
 
-        # Token explanation (Extract words contributing positively to phishing classification)
-        words = re.findall(r'\b\w+\b', text)
-        seen_words = set()
-        
-        for w in words:
-            wl = w.lower()
-            if wl in seen_words:
-                continue
-            seen_words.add(wl)
-            
-            # Look up feature weight
-            weight = self.feature_weights.get(wl, 0.0)
-            
-            # Boost weight based on rules if not captured by TF-IDF
-            if wl in urgent_keywords:
-                weight += 1.5
-            if wl in financial_keywords:
-                weight += 1.2
-            if wl in credential_keywords:
-                weight += 2.0
-            
-            if weight > 0.3:
-                # Classify weight into threat level for word highlighting
-                if weight > 1.5:
-                    word_severity = "critical"
-                    reason = "High phishing association. Prompts sensitive action or contains credential traps."
-                elif weight > 0.8:
-                    word_severity = "high"
-                    reason = "Scam alert word indicating financial gain or high urgency."
-                else:
-                    word_severity = "medium"
-                    reason = "Suspicious keyword often associated with social engineering."
-                
-                highlighted_words.append({
-                    "word": w,
-                    "severity": word_severity,
-                    "weight": float(round(weight, 2)),
-                    "reason": reason
-                })
+        indicators = self._dedupe(indicators)
+        risk_score = float(round(min(99.0, blended), 2))
 
-        # If it's classified as safe (Low risk), clear major negative indicators
         if risk_score < 30:
-            threat_indicators = [ind for ind in threat_indicators if ind['severity'] == "Low"]
-            highlighted_words = [hw for hw in highlighted_words if hw['weight'] < 0.8]
-            recommendations = [
-                "This message appears to be safe.",
-                "Always exercise caution when responding to unexpected requests.",
-                "Ensure your system antivirus and security definitions are up to date."
-            ]
+            risk_level = 'Low'
+        elif risk_score < 50:
+            risk_level = 'Medium'
+        elif risk_score < 80:
+            risk_level = 'High'
+        else:
+            risk_level = 'Critical'
 
-        # Ensure we have at least some recommendations
-        if risk_score >= 30 and not threat_indicators:
-            threat_indicators.append({
-                "type": "Unusual Sentiment",
-                "severity": "Medium",
-                "description": "System detected language patterns correlating with suspicious social engineering campaigns."
+        # Distance from the decision boundary, not the risk score itself — a
+        # 50% score is a maximally *uncertain* verdict, not a moderate one.
+        confidence = float(round(abs(model_probability - 0.5) * 200, 1))
+
+        highlighted = self._highlight(text)
+
+        if risk_score < 30:
+            # A low verdict should not be decorated with alarming annotations.
+            indicators = [i for i in indicators if i['severity'] == 'Low']
+            highlighted = [h for h in highlighted if h['weight'] < 0.8]
+            recommendations = [
+                'Nothing in this message matches a known scam pattern.',
+                'Stay cautious with unexpected requests, even from familiar names.',
+                'Keep your system and security software up to date.',
+            ]
+        else:
+            recommendations = self._recommendations(indicators, risk_level)
+
+        if risk_score >= 30 and not indicators:
+            indicators.append({
+                'type': 'Unusual Language Pattern',
+                'severity': 'Medium',
+                'description': (
+                    'The wording correlates with known social-engineering campaigns even '
+                    'though no single classic red flag is present.'
+                ),
             })
 
         return {
-            "risk_score": risk_score,
-            "risk_level": risk_level,
-            "threat_indicators": threat_indicators,
-            "highlighted_words": highlighted_words,
-            "recommendations": recommendations
+            'risk_score': risk_score,
+            'risk_level': risk_level,
+            'confidence': confidence,
+            'model_probability': round(model_probability * 100, 2),
+            'threat_indicators': indicators,
+            'highlighted_words': highlighted,
+            'recommendations': recommendations,
+            'model_version': MODEL_VERSION,
         }
 
-# Singleton instance
+    # ── Rule overlays ──────────────────────────────────────────────────────
+
+    def _conclusive_rules(self, text, lowered):
+        """Patterns no legitimate message exhibits. These override the model."""
+        indicators = []
+        score = 0.0
+
+        for pattern, label, description in HIGH_CONFIDENCE_PATTERNS:
+            if re.search(pattern, lowered):
+                indicators.append({
+                    'type': label, 'severity': 'Critical', 'description': description,
+                })
+                score = max(score, 92.0)
+
+        if _matches_any(lowered, CREDENTIAL_KEYWORDS):
+            indicators.append({
+                'type': 'Credential Harvesting',
+                'severity': 'Critical',
+                'description': (
+                    'Directly requests credentials, identity confirmation, or one-time codes.'
+                ),
+            })
+            score = max(score, 78.0)
+
+        if any(ext in lowered for ext in DANGEROUS_ATTACHMENTS):
+            indicators.append({
+                'type': 'Dangerous Attachment Type',
+                'severity': 'Critical',
+                'description': (
+                    'References an executable or macro-capable file. Do not open it.'
+                ),
+            })
+            score = max(score, 88.0)
+
+        # A link's *destination* is conclusive on its own: a bare-IP target or a
+        # brand lookalike domain is fraudulent no matter how calm the wording.
+        url_score, url_indicators = self._analyse_urls(text)
+        conclusive_urls = [
+            i for i in url_indicators if i['type'] in CONCLUSIVE_URL_FINDINGS
+        ]
+        if conclusive_urls:
+            indicators.extend(conclusive_urls)
+            score = max(score, url_score)
+
+        return score, indicators
+
+    def _contextual_rules(self, text, lowered):
+        """Wording that is suggestive but appears in legitimate mail too.
+
+        Only consulted when the model has not already judged the message
+        confidently legitimate.
+        """
+        indicators = []
+        score = 0.0
+
+        if _matches_any(lowered, URGENCY_KEYWORDS):
+            indicators.append({
+                'type': 'Manufactured Urgency',
+                'severity': 'High',
+                'description': (
+                    'Uses deadlines or threats of loss to rush you past your own judgement.'
+                ),
+            })
+            score = max(score, 58.0)
+
+        if _matches_any(lowered, FINANCIAL_KEYWORDS):
+            indicators.append({
+                'type': 'Financial Bait',
+                'severity': 'Medium',
+                'description': (
+                    'Dangles a refund, prize, invoice, or investment return as the hook.'
+                ),
+            })
+            score = max(score, 42.0)
+
+        # Only the non-conclusive URL findings belong in this tier; the
+        # conclusive ones were already claimed by `_conclusive_rules`.
+        url_score, url_indicators = self._analyse_urls(text)
+        soft_urls = [i for i in url_indicators if i['type'] not in CONCLUSIVE_URL_FINDINGS]
+        if soft_urls:
+            indicators.extend(soft_urls)
+            score = max(score, min(url_score, 68.0))
+
+        return score, indicators
+
+    @staticmethod
+    def _all_links_reputable(text):
+        """True when the message contains links and every one is on a known domain."""
+        hosts = re.findall(r'https?://([^\s/]+)', text.lower())
+        if not hosts:
+            return False
+        return all(
+            any(_apex_matches(host, domain) for domain in REPUTABLE_DOMAINS)
+            for host in hosts
+        )
+
+    def _analyse_urls(self, text):
+        """Returns (score, indicators) for every link in the message."""
+        indicators = []
+        urls = re.findall(r'https?://([^\s/]+)', text.lower())
+        if not urls:
+            return 0.0, indicators
+
+        score = 12.0
+        suspicious_tld = False
+        brand_mimicry = False
+        ip_literal = False
+
+        for host in urls:
+            if any(host.endswith(tld) for tld in SUSPICIOUS_TLDS):
+                suspicious_tld = True
+            if re.match(r'^\d{1,3}(\.\d{1,3}){3}$', host):
+                ip_literal = True
+            # A brand name inside a hyphenated or multi-part host is the classic
+            # lookalike shape: `apple-verification-support.com`, never apple.com.
+            for brand in IMPERSONATED_BRANDS:
+                if brand in host and not host.split(':')[0].endswith(f'{brand}.com'):
+                    brand_mimicry = True
+                    break
+
+        if brand_mimicry:
+            indicators.append({
+                'type': 'Brand Impersonation Domain',
+                'severity': 'Critical',
+                'description': (
+                    'A link mimics a well-known brand without being served from that '
+                    "brand's real domain."
+                ),
+            })
+            score = max(score, 90.0)
+
+        if ip_literal:
+            indicators.append({
+                'type': 'Raw IP Address Link',
+                'severity': 'Critical',
+                'description': (
+                    'A link points at a bare IP address instead of a domain name — '
+                    'legitimate services do not do this.'
+                ),
+            })
+            score = max(score, 85.0)
+
+        if suspicious_tld:
+            indicators.append({
+                'type': 'High-Abuse Domain Extension',
+                'severity': 'High',
+                'description': (
+                    'The destination uses a domain extension heavily over-represented '
+                    'in abuse reports.'
+                ),
+            })
+            score = max(score, 68.0)
+
+        if not (brand_mimicry or ip_literal or suspicious_tld):
+            indicators.append({
+                'type': 'Hyperlink Present',
+                'severity': 'Low',
+                'description': 'Contains clickable links. Confirm the destination before clicking.',
+            })
+
+        return score, indicators
+
+    @staticmethod
+    def _dedupe(indicators):
+        seen = set()
+        unique = []
+        for indicator in indicators:
+            if indicator['type'] in seen:
+                continue
+            seen.add(indicator['type'])
+            unique.append(indicator)
+        # Most severe first, so the UI leads with what matters.
+        rank = {'Critical': 0, 'High': 1, 'Medium': 2, 'Low': 3}
+        unique.sort(key=lambda i: rank.get(i['severity'], 9))
+        return unique
+
+    def _highlight(self, text):
+        """Words that pushed the verdict toward 'phishing', for the UI overlay."""
+        highlighted = []
+        seen = set()
+
+        for word in re.findall(r'\b\w+\b', text):
+            lowered = word.lower()
+            if lowered in seen:
+                continue
+            seen.add(lowered)
+
+            weight = self.feature_weights.get(lowered, 0.0)
+            if lowered in URGENCY_KEYWORDS:
+                weight += 1.5
+            if lowered in FINANCIAL_KEYWORDS:
+                weight += 1.2
+            if lowered in CREDENTIAL_KEYWORDS:
+                weight += 2.0
+
+            if weight <= 0.3:
+                continue
+
+            if weight > 1.5:
+                severity = 'critical'
+                reason = 'Strong phishing association — prompts a sensitive action.'
+            elif weight > 0.8:
+                severity = 'high'
+                reason = 'Scam-associated wording signalling urgency or financial gain.'
+            else:
+                severity = 'medium'
+                reason = 'Suspicious wording commonly used in social engineering.'
+
+            highlighted.append({
+                'word': word,
+                'severity': severity,
+                'weight': float(round(weight, 2)),
+                'reason': reason,
+            })
+
+        highlighted.sort(key=lambda h: h['weight'], reverse=True)
+        return highlighted[:40]
+
+    @staticmethod
+    def _recommendations(indicators, risk_level):
+        """Advice matched to what was actually found, not a fixed list."""
+        types = {indicator['type'] for indicator in indicators}
+        advice = []
+
+        if risk_level == 'Critical':
+            advice.append('Do not respond, click, or open anything in this message.')
+        else:
+            advice.append('Do not click any links in this message until you have verified it.')
+
+        if 'Credential Harvesting' in types or 'Seed Phrase Request' in types:
+            advice.append(
+                'Never enter passwords, one-time codes, or recovery phrases from a link in a message.'
+            )
+        if 'Brand Impersonation Domain' in types or 'Raw IP Address Link' in types:
+            advice.append(
+                'Reach the company by typing their address yourself, not by following this link.'
+            )
+        if 'Dangerous Attachment Type' in types:
+            advice.append('Do not open the attachment. Delete it and empty your trash.')
+        if 'Gift Card Payment Demand' in types or 'Crypto Payment Demand' in types:
+            advice.append(
+                'Gift card and crypto payments are unrecoverable. No real organisation requests them.'
+            )
+        if 'Manufactured Urgency' in types:
+            advice.append('The deadline is the pressure tactic. Take the time to verify independently.')
+
+        advice.append('Verify the sender through a channel you already trust.')
+        advice.append('Report this message to your security team or forward it to your provider.')
+        return advice
+
+
+# Singleton instance shared across the process.
 classifier = PhishingClassifier()

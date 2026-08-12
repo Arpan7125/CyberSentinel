@@ -1,9 +1,21 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import TextAnalysisView, UrlAnalysisView, ScreenshotAnalysisView, DashboardStatsView, QuizQuestionView, FileAnalysisView, PhoneAnalysisView
-from .auth_views import RegisterView, LoginView, LogoutView, ProfileView, ForgotPasswordView, ResetPasswordView, GoogleLoginView, AdminRegisterView, AdminLoginView, RequestOTPView, OTPLoginView, ChangePasswordView
+from .health import HealthView, ReadinessView
+from .oauth_views import (
+    OAuthProviderListView, OAuthStartView, OAuthCallbackView,
+    ConnectedAccountListView, IntegrationSyncView, IntegrationDisconnectView,
+    IntegrationSyncLogsView,
+)
+from .admin_views import AdminIntegrationsView
+from .analytics_views import (
+    AdminAnalyticsView, AdminRevenueView, AdminThreatCenterView,
+    UserInsightsView, UsageMetricsView, ThreatForecastView,
+)
+from .auth_views import RegisterView, LoginView, LogoutView, ProfileView, ForgotPasswordView, ResetPasswordView, GoogleLoginView, MicrosoftLoginView, AdminRegisterView, AdminLoginView, RequestOTPView, OTPLoginView, ChangePasswordView
 from .subscription_views import SubscribeView, UnsubscribeView, SubscriberListView
 from .chat_views import ChatbotView
+from .intel_views import ThreatIntelFeedView
 from .admin_views import AdminStatsView, AdminUserActionView
 from .integrations_views import GmailImportView, SmsDispatchView, UserIntegrationView, GmailReplyDraftView, PublicConfigView
 from .ticket_views import TicketViewSet
@@ -33,6 +45,10 @@ urlpatterns = [
     # Router endpoints (Tickets & Notifications)
     path('', include(router.urls)),
 
+    # Platform health probes
+    path('health/', HealthView.as_view(), name='health'),
+    path('health/ready/', ReadinessView.as_view(), name='health-ready'),
+
     # Scanning endpoints
     path('analyze/text/', TextAnalysisView.as_view(), name='analyze-text'),
     path('analyze/url/', UrlAnalysisView.as_view(), name='analyze-url'),
@@ -57,6 +73,7 @@ urlpatterns = [
     path('auth/request-otp/', RequestOTPView.as_view(), name='auth-request-otp'),
     path('auth/otp-login/', OTPLoginView.as_view(), name='auth-otp-login'),
     path('auth/google-login/', GoogleLoginView.as_view(), name='auth-google-login'),
+    path('auth/microsoft-login/', MicrosoftLoginView.as_view(), name='auth-microsoft-login'),
     path('auth/admin-register/', AdminRegisterView.as_view(), name='auth-admin-register'),
     path('auth/admin-login/', AdminLoginView.as_view(), name='auth-admin-login'),
     
@@ -66,16 +83,20 @@ urlpatterns = [
     path('integrations/config/', UserIntegrationView.as_view(), name='integrations-config'),
     path('integrations/gmail/reply-draft/', GmailReplyDraftView.as_view(), name='integrations-gmail-reply-draft'),
     
-    # New OAuth & Connected Accounts Integrations
-    path('integrations/providers/', __import__('api.oauth_views', fromlist=['']).OAuthProviderListView.as_view(), name='oauth-providers'),
-    path('integrations/oauth/start/', __import__('api.oauth_views', fromlist=['']).OAuthStartView.as_view(), name='oauth-start'),
-    path('integrations/oauth/callback/', __import__('api.oauth_views', fromlist=['']).OAuthCallbackView.as_view(), name='oauth-callback'),
-    path('integrations/connected/', __import__('api.oauth_views', fromlist=['']).ConnectedAccountListView.as_view(), name='integrations-connected'),
-    path('integrations/sync/', __import__('api.oauth_views', fromlist=['']).IntegrationSyncView.as_view(), name='integrations-sync'),
-    path('integrations/disconnect/', __import__('api.oauth_views', fromlist=['']).IntegrationDisconnectView.as_view(), name='integrations-disconnect'),
-    path('integrations/connected/<int:account_id>/logs/', __import__('api.oauth_views', fromlist=['']).IntegrationSyncLogsView.as_view(), name='integrations-logs'),
-    
+    # OAuth & Connected Accounts Integrations
+    path('integrations/providers/', OAuthProviderListView.as_view(), name='oauth-providers'),
+    path('integrations/oauth/start/', OAuthStartView.as_view(), name='oauth-start'),
+    path('integrations/oauth/callback/', OAuthCallbackView.as_view(), name='oauth-callback'),
+    path('integrations/connected/', ConnectedAccountListView.as_view(), name='integrations-connected'),
+    path('integrations/sync/', IntegrationSyncView.as_view(), name='integrations-sync'),
+    path('integrations/disconnect/', IntegrationDisconnectView.as_view(), name='integrations-disconnect'),
+    path('integrations/connected/<int:account_id>/logs/', IntegrationSyncLogsView.as_view(), name='integrations-logs'),
+
+
     path('config/public/', PublicConfigView.as_view(), name='config-public'),
+
+    # Live threat intelligence sourced from CISA's KEV catalogue.
+    path('intel/feed/', ThreatIntelFeedView.as_view(), name='intel-feed'),
 
     # Security & Access (real login history, device sessions, developer API keys)
     path('security/login-history/', LoginHistoryView.as_view(), name='security-login-history'),
@@ -95,5 +116,16 @@ urlpatterns = [
     # Admin
     path('admin/stats/', AdminStatsView.as_view(), name='admin-stats'),
     path('admin/users/action/', AdminUserActionView.as_view(), name='admin-user-action'),
-    path('admin/integrations/', __import__('api.admin_views', fromlist=['']).AdminIntegrationsView.as_view(), name='admin-integrations'),
+    path('admin/integrations/', AdminIntegrationsView.as_view(), name='admin-integrations'),
+
+    # Live analytics — every figure below is computed from real rows, replacing
+    # the hard-coded arrays the dashboards used to render.
+    path('admin/analytics/', AdminAnalyticsView.as_view(), name='admin-analytics'),
+    path('admin/revenue/', AdminRevenueView.as_view(), name='admin-revenue'),
+    path('admin/threat-center/', AdminThreatCenterView.as_view(), name='admin-threat-center'),
+
+    # Per-user live insights & predictions
+    path('insights/', UserInsightsView.as_view(), name='user-insights'),
+    path('usage/', UsageMetricsView.as_view(), name='usage-metrics'),
+    path('forecast/', ThreatForecastView.as_view(), name='threat-forecast'),
 ]

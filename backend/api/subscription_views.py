@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAdminUser
 from django.core.mail import send_mail
 from django.conf import settings
 from .models import Subscriber
@@ -8,7 +9,8 @@ from .models import Subscriber
 
 class SubscribeView(APIView):
     """Subscribe an email address for daily threat digest updates."""
-    
+    permission_classes = [AllowAny]
+
     def post(self, request):
         email = request.data.get('email', '').strip().lower()
         name = request.data.get('name', '').strip()
@@ -85,7 +87,8 @@ To unsubscribe, visit: https://cybersentinel.ai/unsubscribe/{subscriber.unsubscr
 
 class UnsubscribeView(APIView):
     """Unsubscribe using email or token."""
-    
+    permission_classes = [AllowAny]
+
     def post(self, request):
         email = request.data.get('email', '').strip().lower()
         token = request.data.get('token', '').strip()
@@ -107,27 +110,14 @@ class UnsubscribeView(APIView):
 
 
 class SubscriberListView(APIView):
-    """Admin-only: list all subscribers."""
-    
+    """Admin-only: list all subscribers.
+
+    Authorisation is enforced by DRF rather than by re-implementing token
+    lookup here, so it stays consistent with every other admin surface.
+    """
+    permission_classes = [IsAdminUser]
+
     def get(self, request):
-        from rest_framework.authentication import TokenAuthentication
-        from rest_framework.permissions import IsAdminUser
-        
-        # Manual admin check
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Token '):
-            return Response({'error': 'Authentication required.'}, status=status.HTTP_401_UNAUTHORIZED)
-        
-        token_key = auth_header.split(' ')[1]
-        try:
-            from rest_framework.authtoken.models import Token
-            token_obj = Token.objects.get(key=token_key)
-            user = token_obj.user
-            if not (user.is_staff or user.is_superuser):
-                return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
-        except Token.DoesNotExist:
-            return Response({'error': 'Invalid token.'}, status=status.HTTP_401_UNAUTHORIZED)
-        
         subscribers = Subscriber.objects.all().order_by('-created_at')
         data = [{
             'id': s.id,

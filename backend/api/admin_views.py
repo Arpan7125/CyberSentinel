@@ -2,35 +2,16 @@ from django.contrib.auth.models import User
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.authtoken.models import Token
 from django.db.models import Count
 from .models import ScanLog, Subscriber
-
-
-def get_admin_user(request):
-    """Helper to verify admin auth from request. Returns user or None."""
-    auth_header = request.headers.get('Authorization', '')
-    if not auth_header.startswith('Token '):
-        return None
-    token_key = auth_header.split(' ', 1)[1]
-    try:
-        token_obj = Token.objects.get(key=token_key)
-        user = token_obj.user
-        if user.is_staff or user.is_superuser:
-            return user
-        return None
-    except Token.DoesNotExist:
-        return None
+from .permissions import IsAdmin
 
 
 class AdminStatsView(APIView):
     """Admin overview: user counts, scans, subscribers, threat distribution."""
-    
+    permission_classes = [IsAdmin]
+
     def get(self, request):
-        admin_user = get_admin_user(request)
-        if not admin_user:
-            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
-        
         total_users = User.objects.count()
         total_scans = ScanLog.objects.count()
         total_subscribers = Subscriber.objects.filter(is_active=True).count()
@@ -76,12 +57,11 @@ class AdminStatsView(APIView):
 
 class AdminUserActionView(APIView):
     """Admin: toggle user active/staff status or delete user."""
-    
+    permission_classes = [IsAdmin]
+
     def post(self, request):
-        admin_user = get_admin_user(request)
-        if not admin_user:
-            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
-        
+        admin_user = request.user
+
         action = request.data.get('action')  # 'toggle_active', 'toggle_staff', 'delete'
         user_id = request.data.get('user_id')
         
@@ -118,12 +98,9 @@ class AdminUserActionView(APIView):
 
 class AdminIntegrationsView(APIView):
     """Admin: View ecosystem stats, manage providers, view user connections."""
+    permission_classes = [IsAdmin]
 
     def get(self, request):
-        admin_user = get_admin_user(request)
-        if not admin_user:
-            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
-
         from .models import OAuthProvider, ConnectedAccount, IntegrationSyncLog
         from django.db.models import Q
 
@@ -171,10 +148,6 @@ class AdminIntegrationsView(APIView):
 
     def post(self, request):
         """Create or update an OAuthProvider."""
-        admin_user = get_admin_user(request)
-        if not admin_user:
-            return Response({'error': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
-
         from .models import OAuthProvider
 
         action = request.data.get('action')

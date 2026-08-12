@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { adminService } from '../../services/api';
+import { adminService, authService } from '../../services/api';
 import { Search, KeyRound, X } from 'lucide-react';
 
 export default function UsersPage() {
@@ -74,8 +74,28 @@ export default function UsersPage() {
     }
   };
 
-  const handleResetPassword = (email) => {
-    alert(`Password reset feature will be integrated via email dispatch to: ${email}`);
+  /**
+   * Triggers the same reset flow the user would start themselves: the server
+   * emails them a one-time code. This button previously only announced that the
+   * feature "will be integrated", so an admin who clicked it believed they had
+   * helped a locked-out user when nothing had been sent.
+   *
+   * The admin never sees or sets the password — the code goes to the account's
+   * own address, which is what keeps this from being an account-takeover tool.
+   */
+  const handleResetPassword = async (email) => {
+    if (!email) {
+      alert('This account has no email address on file, so a reset cannot be sent.');
+      return;
+    }
+    if (!window.confirm(`Email a password reset code to ${email}?`)) return;
+
+    try {
+      await authService.forgotPassword(email);
+      alert(`A reset code has been emailed to ${email}.`);
+    } catch (err) {
+      alert(err.data?.error || err.message || 'Could not send the reset email.');
+    }
   };
 
   const filteredUsers = users.filter(u =>

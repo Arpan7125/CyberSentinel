@@ -4,7 +4,7 @@ import { authService } from '../../services/api';
 
 export default function SettingsPage() {
   const { logout } = useAuth();
-  const [theme, setTheme] = useState(() => localStorage.getItem('cs_theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('cs_theme') || 'light');
   const [lang, setLang] = useState('English');
   const [retention, setRetention] = useState('30');
   const [telemetryOptIn, setTelemetryOptIn] = useState(true);

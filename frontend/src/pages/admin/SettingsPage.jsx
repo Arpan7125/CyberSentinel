@@ -1,150 +1,168 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { AlertTriangle, CheckCircle2, RefreshCw, XCircle, MinusCircle } from 'lucide-react';
+import { healthService } from '../../services/api';
+import { useApiData } from '../../hooks/useApiData';
+
+/**
+ * Live system configuration, read from the readiness probe.
+ *
+ * This page used to present controls that did nothing. "Test & Save Configs"
+ * only fired an alert saying SMTP had been saved; the feature-flag toggles moved
+ * React state and nothing else; "Run Backup" reported that a database snapshot
+ * had been queued when no such task exists. An administrator could have believed
+ * they held a backup they did not have.
+ *
+ * Configuration on this platform lives in environment variables on the host, so
+ * the honest UI is a read-only report of what the running process resolved them
+ * to — plus a plain statement of where to change them.
+ */
+const STATE_STYLES = {
+  ok: { color: 'var(--sev-low)', Icon: CheckCircle2, label: 'Operational' },
+  degraded: { color: 'var(--sev-medium)', Icon: AlertTriangle, label: 'Degraded' },
+  error: { color: 'var(--sev-critical)', Icon: XCircle, label: 'Failing' },
+  off: { color: 'var(--sev-unknown)', Icon: MinusCircle, label: 'Not configured' },
+};
+
+/** Map a raw check string from the probe onto one of four display states. */
+function classify(value) {
+  const raw = String(value || '').toLowerCase();
+  if (raw.startsWith('error')) return 'error';
+  if (raw.startsWith('degraded')) return 'degraded';
+  if (raw.startsWith('not configured') || raw === 'console only') return 'off';
+  return 'ok';
+}
+
+const CHECK_META = {
+  database: {
+    label: 'Database',
+    detail: 'Set with DATABASE_URL. Without it the app falls back to SQLite, which an ephemeral host wipes on every deploy.',
+  },
+  redis: {
+    label: 'Redis / live push',
+    detail: 'Set with REDIS_URL. Without it WebSocket broadcasts cannot cross worker processes; REST keeps working.',
+  },
+  virustotal: {
+    label: 'VirusTotal',
+    detail: 'Set with VIRUSTOTAL_API_KEY. Unset, the file and URL scanners report "unscanned" rather than guessing a verdict.',
+  },
+  google_oauth: {
+    label: 'Google sign-in',
+    detail: 'Set with GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. Unset, the Google button is hidden rather than shown broken.',
+  },
+  email: {
+    label: 'Email delivery',
+    detail: 'Set with EMAIL_HOST, EMAIL_HOST_USER and EMAIL_HOST_PASSWORD. On "console only", password-reset codes print to the server log instead of being sent.',
+  },
+};
 
 export default function SettingsPage() {
-  const [maintenanceMode, setMaintenanceMode] = useState(false);
-  const [featureFlags, setFeatureFlags] = useState([
-    { key: 'ff_gmail_sync', name: 'Gmail Threat Telemetry Sync', enabled: true },
-    { key: 'ff_sandbox_ocr', name: 'OCR Sandbox Image Reading', enabled: true },
-    { key: 'ff_enterprise_sso', name: 'Enterprise SAML/SSO login', enabled: false },
-    { key: 'ff_mfa_sms', name: 'SMS Multi-Factor Authentication', enabled: false }
-  ]);
+  const { data, loading, error, refetch } = useApiData(() => healthService.readiness(), []);
 
-  const [smtpForm, setSmtpForm] = useState({
-    server: 'smtp.sendgrid.net',
-    port: '587',
-    username: 'apikey',
-    sender: 'noreply@cybersentinel.ai'
-  });
-
-  const handleSmtpSave = (e) => {
-    e.preventDefault();
-    alert('SMTP email settings successfully saved.');
-  };
-
-  const handleToggleFlag = (key) => {
-    setFeatureFlags(prev => prev.map(f => f.key === key ? { ...f, enabled: !f.enabled } : f));
-  };
-
-  const handleBackup = () => {
-    alert('Database snapshot initialized. Backup task sent to background queue.');
-  };
+  // A 503 from the probe is still a useful answer — the error body carries the
+  // per-dependency detail that explains why.
+  const checks = data?.checks || error?.data?.checks || null;
+  const status = data?.status || error?.data?.status;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 900 }}>
-      <div>
-        <h1 className="page-title">Global Configurations</h1>
-        <p className="page-subtitle">Configure system API integrations, SMTP connections, OAuth SSO, feature flags, and backups</p>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: 24 }}>
-        {/* SMTP server Settings */}
-        <div className="glass-card" style={{ padding: 28 }}>
-          <h3 className="section-title" style={{ marginBottom: 20 }}>System SMTP Configurations</h3>
-          <form onSubmit={handleSmtpSave} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="form-group">
-              <label className="form-label-pub">SMTP Host Address</label>
-              <input
-                type="text"
-                className="form-input-pub"
-                value={smtpForm.server}
-                onChange={e => setSmtpForm(p => ({ ...p, server: e.target.value }))}
-                required
-              />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div className="form-group">
-                <label className="form-label-pub">SMTP Port</label>
-                <input
-                  type="text"
-                  className="form-input-pub"
-                  value={smtpForm.port}
-                  onChange={e => setSmtpForm(p => ({ ...p, port: e.target.value }))}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label-pub">Sender Email Address</label>
-                <input
-                  type="email"
-                  className="form-input-pub"
-                  value={smtpForm.sender}
-                  onChange={e => setSmtpForm(p => ({ ...p, sender: e.target.value }))}
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label-pub">SMTP Username</label>
-              <input
-                type="text"
-                className="form-input-pub"
-                value={smtpForm.username}
-                onChange={e => setSmtpForm(p => ({ ...p, username: e.target.value }))}
-                required
-              />
-            </div>
-
-            <button type="submit" className="btn-pub btn-pub-primary btn-pub-sm" style={{ alignSelf: 'flex-start' }}>
-              Test & Save Configs
-            </button>
-          </form>
+    <div className="flex max-w-4xl flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-display-xs font-bold text-text-primary">System configuration</h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            What this running instance resolved its environment to, checked live.
+          </p>
         </div>
 
-        {/* Feature Flags & Operations */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          {/* Feature flags panel */}
-          <div className="glass-card" style={{ padding: 28 }}>
-            <h3 className="section-title" style={{ marginBottom: 16 }}>Platform Feature Flags</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {featureFlags.map(flag => (
-                <div key={flag.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700 }}>{flag.name}</div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{flag.key}</div>
-                  </div>
-                  <button
-                    className={`btn-pub btn-pub-sm ${flag.enabled ? 'btn-pub-primary' : 'btn-pub-secondary'}`}
-                    onClick={() => handleToggleFlag(flag.key)}
-                  >
-                    {flag.enabled ? 'Active' : 'Disabled'}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+        <button
+          type="button"
+          onClick={refetch}
+          className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:border-border-strong"
+        >
+          <RefreshCw size={13} aria-hidden="true" />
+          Re-check
+        </button>
+      </header>
 
-          {/* Maintenance & backups */}
-          <div className="glass-card" style={{ padding: 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <h3 className="section-title">System Operations</h3>
+      {status && (
+        <div
+          className={`rounded-lg border p-4 ${
+            status === 'ready' ? 'border-border-subtle bg-bg-card' : 'border-accent-red/40 bg-bg-card'
+          }`}
+          role={status === 'ready' ? undefined : 'alert'}
+        >
+          <p className="text-sm font-semibold text-text-primary">
+            {status === 'ready' ? 'All required dependencies are reachable.' : 'This instance is not ready to serve.'}
+          </p>
+          {status !== 'ready' && (
+            <p className="mt-1 text-sm text-text-secondary">
+              A required dependency failed its check. The detail is in the list below.
+            </p>
+          )}
+        </div>
+      )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>Maintenance Mode</div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Show maintenance screen to all nodes</div>
-              </div>
-              <button
-                className={`btn-pub btn-pub-sm ${maintenanceMode ? 'btn-pub-danger' : 'btn-pub-secondary'}`}
-                onClick={() => setMaintenanceMode(!maintenanceMode)}
+      {loading && (
+        <div className="flex flex-col gap-3">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-20 animate-pulse rounded-lg bg-bg-tertiary" />
+          ))}
+        </div>
+      )}
+
+      {!loading && !checks && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-accent-red/40 bg-bg-card p-4" role="alert">
+          <AlertTriangle size={18} className="text-accent-red" aria-hidden="true" />
+          <p className="flex-1 text-sm text-text-secondary">
+            {error?.message || 'Could not reach the readiness endpoint.'}
+          </p>
+        </div>
+      )}
+
+      {!loading && checks && (
+        <ul className="flex flex-col gap-3">
+          {Object.entries(checks).map(([key, value]) => {
+            const state = STATE_STYLES[classify(value)];
+            const meta = CHECK_META[key] || { label: key, detail: null };
+            const { Icon } = state;
+
+            return (
+              <li
+                key={key}
+                className="flex items-start gap-4 rounded-lg border border-border-subtle bg-bg-card p-4 shadow-sm"
+                style={{ borderLeft: `3px solid ${state.color}` }}
               >
-                {maintenanceMode ? 'ONLINE' : 'OFFLINE'}
-              </button>
-            </div>
+                <Icon size={18} style={{ color: state.color, marginTop: 2 }} aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold text-text-primary">{meta.label}</span>
+                    <span className="font-mono text-xs" style={{ color: state.color }}>
+                      {value}
+                    </span>
+                  </div>
+                  {meta.detail && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">{meta.detail}</p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-subtle)', paddingTop: 16 }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>Database Snapshots</div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Run absolute system backups now</div>
-              </div>
-              <button className="btn-pub btn-pub-secondary btn-pub-sm" onClick={handleBackup}>
-                Run Backup
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <section className="rounded-lg border border-border-subtle bg-bg-card p-5 shadow-sm">
+        <h2 className="text-sm font-semibold text-text-primary">Changing any of this</h2>
+        <p className="mt-2 text-sm leading-relaxed text-text-secondary">
+          These values come from environment variables on the backend host, not from the database, so
+          they cannot be edited from this screen. Update them in the Render dashboard under
+          <span className="font-mono text-xs"> Environment</span>, then redeploy — the new values are
+          read at process start. <span className="font-mono text-xs">backend/.env.example</span>{' '}
+          lists every variable the application reads, and DEPLOYMENT.md covers the deployed setup.
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-text-secondary">
+          Database backups are handled by the database provider, not by this application. On Render,
+          Postgres backups are configured on the database instance itself.
+        </p>
+      </section>
     </div>
   );
 }

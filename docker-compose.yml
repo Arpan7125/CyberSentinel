@@ -1,11 +1,45 @@
-version: '3.8'
+# Local development stack.
+#
+# Production deploys to Vercel (frontend) + Render (backend) — see DEPLOYMENT.md.
+# This file exists so the whole system can be run locally with real Postgres and
+# real Redis, matching production's shape rather than SQLite + in-memory.
+#
+#   docker compose up --build
+#   → API   http://localhost:8000/api/health/
+#   → Admin http://localhost:8000/admin/
+#
+# Run the Vite dev server separately (`cd frontend && npm run dev`) so hot
+# reloading keeps working.
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: cybersentinel_db
+    environment:
+      POSTGRES_DB: cybersentinel
+      POSTGRES_USER: cybersentinel
+      POSTGRES_PASSWORD: localdev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cybersentinel -d cybersentinel"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     container_name: cybersentinel_redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   backend:
@@ -13,17 +47,46 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: cybersentinel_backend
+    # Migrations run here rather than in the image's CMD so they happen exactly
+    # once, before the server accepts traffic.
+    command: >
+      sh -c "python manage.py migrate --no-input &&
+             daphne -b 0.0.0.0 -p 8000 cybersentinel_backend.asgi:application"
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/app
     environment:
-      - PYTHONUNBUFFERED=1
-      - DEBUG=True
-      - REDIS_URL=redis://redis:6379/0
+      PYTHONUNBUFFERED: "1"
+      DEBUG: "True"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,backend"
+      FRONTEND_URL: "http://localhost:5173"
+      DATABASE_URL: "postgres://cybersentinel:localdev@db:5432/cybersentinel"
+      REDIS_URL: "redis://redis:6379/0"
+      LOG_LEVEL: "DEBUG"
+    env_file:
+      # Optional. Real API keys (VirusTotal, Google OAuth, SMTP) live here and
+      # are gitignored. The stack starts fine without it — those features just
+      # report themselves as not configured.
+      - path: ./backend/.env
+        required: false
+    volumes:
+      # Source is mounted for live editing; the writable runtime directories are
+      # kept as named volumes so the mount does not shadow them.
+      - ./backend:/app
+      - backend_static:/app/staticfiles
+      - backend_media:/app/media
+      - backend_models:/app/ml_models
     depends_on:
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_static:
+  backend_media:
+  backend_models:
 
 networks:
   default:

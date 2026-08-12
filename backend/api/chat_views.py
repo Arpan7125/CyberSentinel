@@ -1,12 +1,19 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.permissions import AllowAny
+
 from .chatbot_engine import get_bot_response
 
 
 class ChatbotView(APIView):
-    """AI Chatbot endpoint for cybersecurity assistance."""
-    
+    """AI Chatbot endpoint for cybersecurity assistance.
+
+    Public so the site-wide help widget works before sign-in; the project-wide
+    anon throttle caps how hard it can be hit.
+    """
+    permission_classes = [AllowAny]
+
     def post(self, request):
         message = request.data.get('message', '').strip()
         language = request.data.get('language', 'English')

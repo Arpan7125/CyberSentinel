@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
 from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 
 from .models import ScanLog
 from .ml_classifier import classifier
@@ -302,11 +302,26 @@ class GmailReplyDraftView(APIView):
         }, status=status.HTTP_200_OK)
 
 class PublicConfigView(APIView):
-    """Returns public system credentials like the active Google Client ID."""
+    """Public, non-secret client configuration the frontend needs before sign-in.
+
+    Reads the platform's own credentials from settings. It must never fall back
+    to `UserIntegration.objects.first()` — that served one arbitrary customer's
+    OAuth client ID to every anonymous visitor.
+    """
+    permission_classes = [AllowAny]
+
     def get(self, request):
-        from .models import UserIntegration
-        config = UserIntegration.objects.first()
-        client_id = config.gmail_client_id if config else ''
+        client_id = settings.GOOGLE_CLIENT_ID
         return Response({
-            'gmail_client_id': client_id or 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com'
+            'gmail_client_id': client_id,
+            # Lets the UI hide the Google button entirely instead of rendering
+            # one that fails the moment it is clicked.
+            'google_oauth_configured': bool(client_id and settings.GOOGLE_CLIENT_SECRET),
+            'microsoft_client_id': settings.MICROSOFT_CLIENT_ID,
+            'microsoft_oauth_configured': bool(settings.MICROSOFT_CLIENT_ID),
+            'virustotal_configured': bool(settings.VIRUSTOTAL_API_KEY),
+            'email_delivery_configured': (
+                settings.EMAIL_BACKEND == 'django.core.mail.backends.smtp.EmailBackend'
+            ),
+            'realtime_configured': bool(settings.REDIS_URL),
         }, status=status.HTTP_200_OK)

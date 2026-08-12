@@ -87,8 +87,8 @@ function ScamModal({ scam, onClose }) {
                   <Users size={18} color="var(--text-secondary)" />
                 </div>
                 <div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Community Impact</div>
-                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{scam.reports} user reports</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Submitted</div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>{scam.date}</div>
                 </div>
              </div>
 
@@ -141,46 +141,59 @@ export default function CommunityDatabasePage() {
   const [search, setSearch] = useState('');
   const [scams, setScams] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [selectedScam, setSelectedScam] = useState(null);
 
   useEffect(() => {
     const fetchScams = async () => {
       setLoading(true);
+      setError(null);
       try {
-        const res = await saasService.getScamReports();
-        const backendScams = res || [];
-        
-        // Default high-fidelity scams if DB is empty
-        const defaultScams = [
-          { id: 'SC-9241', title: 'Fake PayPal Invoice (GeekSquad)', type: 'Email Phishing', date: '2 hours ago', reports: 124, status: 'Confirmed Threat', description: 'Subject: Invoice #827392 from GeekSquad.\n\nAttackers are sending fake invoices claiming an automatic renewal of $399.99 for Geek Squad services. A phone number is provided to cancel the order, which leads to a malicious call center attempting to gain remote access to the victim\'s computer.' },
-          { id: 'SC-9240', title: 'Crypto Giveaway on X', type: 'Social Media', date: '4 hours ago', reports: 56, status: 'Investigating', description: 'A verified compromised account is posting links to a fake airdrop claiming users can double their crypto by sending funds to a specific address. The link redirects to a highly sophisticated phishing site mirroring popular Web3 wallets.' },
-          { id: 'SC-9239', title: 'USPS Missed Package SMS', type: 'Smishing', date: '5 hours ago', reports: 890, status: 'Confirmed Threat', description: 'SMS: "USPS: Your package could not be delivered due to an incomplete address. Please update your details here: [malicious-link]".\n\nThe link leads to a fake USPS site asking for a $1.50 redelivery fee to steal credit card information.' },
-          { id: 'SC-9238', title: 'LinkedIn Job Offer Advance Fee', type: 'Employment', date: '1 day ago', reports: 34, status: 'Confirmed Threat', description: 'Attackers pose as recruiters on LinkedIn offering high-paying remote jobs. After a brief "interview", candidates are told they got the job but need to pay an advance fee for "home office equipment" using a specific vendor.' }
-        ];
+        const backendScams = (await saasService.getScamReports()) || [];
 
-        if (backendScams.length > 0) {
-          const mapped = backendScams.map((s) => ({
-            id: `SC-${10000 + s.id}`,
-            title: s.url_or_email,
-            type: s.url_or_email.includes('@') ? 'Email Phishing' : s.url_or_email.includes('http') ? 'Website Phishing' : 'Social Engineering',
-            date: new Date(s.created_at).toLocaleDateString(),
-            reports: 1 + (s.id % 5),
-            status: s.status === 'verified' ? 'Confirmed Threat' : s.status === 'investigating' ? 'Investigating' : 'Pending Verification',
-            description: s.description || 'Details currently being analyzed.'
-          }));
-          // Merge with defaults to keep database looking rich
-          setScams([...mapped, ...defaultScams]);
-        } else {
-          setScams(defaultScams);
-        }
+        // Reports are shown exactly as submitted. This list used to be padded
+        // with four invented entries "to keep database looking rich", and the
+        // per-report count was `1 + (s.id % 5)` — a number derived from the row's
+        // primary key, not from how many people reported the scam.
+        const mapped = backendScams.map((s) => ({
+          id: `SC-${10000 + s.id}`,
+          title: s.url_or_email,
+          type: s.url_or_email.includes('@')
+            ? 'Email Phishing'
+            : s.url_or_email.includes('http')
+              ? 'Website Phishing'
+              : 'Social Engineering',
+          date: new Date(s.created_at).toLocaleDateString(),
+          status:
+            s.status === 'verified'
+              ? 'Confirmed Threat'
+              : s.status === 'investigating'
+                ? 'Investigating'
+                : 'Pending Verification',
+          description: s.description || 'No further detail was submitted with this report.',
+        }));
+
+        setScams(mapped);
       } catch (err) {
-        console.error(err);
+        setError(err);
       } finally {
         setLoading(false);
       }
     };
     fetchScams();
   }, []);
+
+  // Headline figures counted from the reports actually in the database, so an
+  // empty database reads as empty instead of "12,405 scams indexed today".
+  const summary = useMemo(() => {
+    const confirmed = scams.filter((s) => s.status === 'Confirmed Threat').length;
+    const byType = scams.reduce((acc, s) => {
+      acc[s.type] = (acc[s.type] || 0) + 1;
+      return acc;
+    }, {});
+    const top = Object.entries(byType).sort((a, b) => b[1] - a[1])[0];
+    return { total: scams.length, confirmed, topType: top ? top[0] : '—' };
+  }, [scams]);
 
   const filteredScams = useMemo(() => {
     if (!search.trim()) return scams;
@@ -208,9 +221,9 @@ export default function CommunityDatabasePage() {
         
         {/* Stats Row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
-          <StatCard icon={ShieldAlert} value="12,405" label="Scams Indexed Today" color="#34C759" />
-          <StatCard icon={Users} value="45.2K" label="Community Reports (24h)" color="#AF52DE" />
-          <StatCard icon={TrendingUp} value="Smishing" label="Top Trending Threat" color="#FF3B30" />
+          <StatCard icon={ShieldAlert} value={loading ? '—' : summary.total.toLocaleString()} label="Reports in the database" color="var(--sev-low)" />
+          <StatCard icon={Users} value={loading ? '—' : summary.confirmed.toLocaleString()} label="Confirmed threats" color="var(--accent-violet)" />
+          <StatCard icon={TrendingUp} value={loading ? '—' : summary.topType} label="Most reported category" color="var(--sev-critical)" />
         </div>
 
         {/* Database Section */}
@@ -262,7 +275,13 @@ export default function CommunityDatabasePage() {
                 {filteredScams.length === 0 ? (
                    <tr>
                      <td colSpan="5" style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                       No results found for "{search}"
+                       {loading
+                         ? 'Loading reports…'
+                         : error
+                           ? (error.message || 'Could not load the report database.')
+                           : search.trim()
+                             ? `No results found for "${search}"`
+                             : 'No scam reports have been submitted yet. Be the first — use the Report a Scam page.'}
                      </td>
                    </tr>
                 ) : (
@@ -286,8 +305,7 @@ export default function CommunityDatabasePage() {
                         </span>
                       </td>
                       <td style={{ padding: '20px 24px' }}>
-                        <div style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: 500, marginBottom: '2px' }}>{scam.date}</div>
-                        <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{scam.reports} reports</div>
+                        <div style={{ color: 'var(--text-primary)', fontSize: '14px', fontWeight: 500 }}>{scam.date}</div>
                       </td>
                       <td style={{ padding: '20px 24px' }}>
                         <span style={{ 

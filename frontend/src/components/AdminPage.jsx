@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../AuthContext';
 
-const API = 'http://localhost:8000/api';
+// Must come from the environment: a hard-coded localhost breaks the moment this
+// bundle is served from anywhere but a developer's machine.
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 function StatCard({ icon, label, value, colorClass, borderGlow }) {
   return (

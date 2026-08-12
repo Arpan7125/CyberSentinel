@@ -411,7 +411,7 @@ export default function ConnectedAccountsPage() {
         display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 32
       }}>
         {[
-          { icon: Plug,    label: 'Available Integrations', value: providers.length,  color: '#6366f1' },
+          { icon: Plug,    label: 'Available Integrations', value: providers.length,  color: 'var(--accent)' },
           { icon: CheckCircle2, label: 'Connected',         value: totalConnected,    color: '#34C759' },
           { icon: Zap,     label: 'Protected Services',     value: totalConnected,    color: '#FF9F0A' },
         ].map(({ icon: Icon, label, value, color }) => (

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Palette, Sliders, ShieldCheck, Moon, Sun, Zap, BrainCircuit } from 'lucide-react';
 
 export default function SettingsPanel() {
   
   // Theme state
-  const [theme, setTheme] = useState(() => localStorage.getItem('cs_theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('cs_theme') || 'light');
   
   // Preferences
   const [autoScan, setAutoScan] = useState(() => localStorage.getItem('cs_auto_scan') !== 'false');
@@ -200,54 +201,34 @@ export default function SettingsPanel() {
                 <strong style={{ fontSize: 12.5, display: 'block', marginBottom: 2 }}>Gmail Integration</strong>
                 <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Sign in to Google to sync and scan your email inbox.</span>
               </div>
+              {/* Sends the user to the real OAuth flow on the integrations page.
+                  This button previously popped a confirm dialog and wrote a fake
+                  `ya29.mock_…` token to localStorage, which made the UI claim a
+                  connection that did not exist and could never sync anything. */}
               <div style={{ flexShrink: 0 }}>
-                {localStorage.getItem('cs_gmail_token') ? (
-                  <button type="button" onClick={() => { localStorage.removeItem('cs_gmail_token'); window.location.reload(); }} className="ios-btn" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    Disconnect Google
-                  </button>
-                ) : (
-                  <button type="button" onClick={() => {
-                    alert('Google OAuth Consent Simulation: Requesting offline access to Gmail API...\n\n(Click OK to grant permissions)');
-                    localStorage.setItem('cs_gmail_token', 'ya29.mock_google_oauth_token_' + Date.now());
-                    window.location.reload();
-                  }} className="ios-btn ios-btn-primary">
-                    Connect Google
-                  </button>
-                )}
+                <Link to="/dashboard/integrations" className="ios-btn ios-btn-primary" style={{ textDecoration: 'none' }}>
+                  Manage connection
+                </Link>
               </div>
             </div>
 
-            {/* SMS Integration */}
+            {/* SMS scanning.
+                There is no phone-number verification service behind this build.
+                The previous control accepted the hard-coded OTP "123456" and
+                recorded "✓ Number Verified" in localStorage — a verified state
+                that no server ever agreed to. It now points at the SMS analyser,
+                which is a real endpoint. */}
             <div style={{ display: 'flex', flexDirection: 'column', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 14 }}>
               <div style={{ marginBottom: 14 }}>
-                <strong style={{ fontSize: 12.5, display: 'block', marginBottom: 2 }}>SMS Integration</strong>
-                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Sync text messages for live threat scanning.</span>
+                <strong style={{ fontSize: 12.5, display: 'block', marginBottom: 2 }}>SMS scanning</strong>
+                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                  Automatic inbox sync is not available. Paste a suspicious message into the SMS
+                  analyser to have it scored.
+                </span>
               </div>
-              {localStorage.getItem('cs_sms_verified') ? (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: 'var(--accent-green)', fontWeight: 800 }}>✓ Number Verified</span>
-                  <button type="button" onClick={() => { localStorage.removeItem('cs_sms_verified'); window.location.reload(); }} className="ios-btn" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
-                    Disconnect
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <input type="text" placeholder="+1 (555) 000-0000" className="form-input" style={{ flex: 1, height: 36, fontSize: 13 }} id="phone_input" />
-                  <button type="button" onClick={() => {
-                    const phone = document.getElementById('phone_input').value;
-                    if (!phone) return alert('Please enter a phone number first.');
-                    const otp = prompt(`Verification OTP sent to ${phone}.\n\n(Simulated OTP: 123456)\nEnter OTP below:`);
-                    if (otp === '123456') {
-                      localStorage.setItem('cs_sms_verified', phone);
-                      window.location.reload();
-                    } else if (otp !== null) {
-                      alert('Invalid OTP.');
-                    }
-                  }} className="ios-btn ios-btn-primary" style={{ height: 36 }}>
-                    Send OTP
-                  </button>
-                </div>
-              )}
+              <Link to="/dashboard/sms-analyzer" className="ios-btn" style={{ textDecoration: 'none', alignSelf: 'flex-start' }}>
+                Open SMS analyser
+              </Link>
             </div>
           </div>
         </div>

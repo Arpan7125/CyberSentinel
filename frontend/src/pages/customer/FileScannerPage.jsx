@@ -5,55 +5,45 @@ import { scanService } from '../../services/api';
 export default function FileScannerPage() {
   const [file, setFile] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
   const fileInputRef = useRef(null);
 
   const handleFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       setFile(e.target.files[0]);
       setResult(null);
-      setProgress(0);
+      setError('');
     }
   };
 
   const runScan = async () => {
     if (!file) return;
     setIsScanning(true);
-    setProgress(0);
     setResult(null);
+    setError('');
 
     const formData = new FormData();
     formData.append('file', file);
 
-    const interval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 90) return 90;
-        return prev + Math.floor(Math.random() * 12) + 4;
-      });
-    }, 250);
-
+    // No synthetic progress bar. The old one advanced by a random 4–15% every
+    // 250ms, which meant the number on screen had no relationship to the request
+    // at all — it could sit at 90% for a minute or hit 90% before the upload
+    // even started. An indeterminate indicator is the honest signal here.
     try {
       const res = await scanService.analyzeFile(formData);
-      clearInterval(interval);
-      setProgress(100);
-      
-      // Brief delay to make the scan feel satisfying
-      setTimeout(() => {
-        setIsScanning(false);
-        setResult(res);
-      }, 300);
+      setResult(res);
     } catch (err) {
-      clearInterval(interval);
+      setError(err.data?.error || err.message || 'Failed to analyze file.');
+    } finally {
       setIsScanning(false);
-      alert(err.data?.error || err.message || 'Failed to analyze file.');
     }
   };
 
   const reset = () => {
     setFile(null);
     setResult(null);
-    setProgress(0);
+    setError('');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -63,12 +53,31 @@ export default function FileScannerPage() {
       {/* Header */}
       <div style={{ textAlign: 'center', marginTop: 32 }}>
         <h1 className="page-title" style={{ fontSize: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-          <File size={40} color="var(--accent)" /> Advanced File Sandbox
+          <File size={40} color="var(--accent)" /> File Reputation Scanner
         </h1>
-        <p className="page-subtitle" style={{ maxWidth: 600, margin: '0 auto' }}>
-          Upload any file (PDF, EXE, ZIP) up to 50MB. We will detonate it safely in our isolated cloud sandbox to detect hidden malware, ransomware, and exploits.
+        {/* Describes what the backend does: SHA-256 the upload and look the hash
+            up against VirusTotal's engines. Nothing is executed anywhere, and
+            claiming otherwise would misrepresent the verdict's strength. */}
+        <p className="page-subtitle" style={{ maxWidth: 620, margin: '0 auto' }}>
+          Upload a file up to 50&nbsp;MB. We compute its SHA-256 fingerprint and check that against
+          VirusTotal&apos;s multi-engine reputation database. The file is never executed, and a hash
+          nobody has seen before is reported as unknown rather than clean.
         </p>
       </div>
+
+      {error && (
+        <div
+          className="glass-card"
+          style={{ padding: 20, display: 'flex', alignItems: 'center', gap: 12, border: '1px solid rgba(239,68,68,0.3)' }}
+          role="alert"
+        >
+          <AlertTriangle size={18} color="var(--accent-red)" aria-hidden="true" />
+          <span style={{ flex: 1, fontSize: 14, color: 'var(--text-secondary)' }}>{error}</span>
+          <button className="btn-pub btn-pub-ghost btn-pub-sm" onClick={() => setError('')}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {!result && !isScanning && (
         <div 
@@ -128,20 +137,22 @@ export default function FileScannerPage() {
       )}
 
       {isScanning && (
-        <div className="glass-card" style={{ padding: 48, textAlign: 'center' }}>
-          <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Analyzing File in Sandbox...</h3>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 32 }}>Executing {file.name} in a secure virtual environment.</p>
-          
-          <div style={{ width: '100%', height: 8, background: 'var(--bg-hover)', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{ width: `${progress}%`, height: '100%', background: 'var(--accent-purple)', transition: 'width 0.3s ease' }}></div>
+        <div className="glass-card" style={{ padding: 48, textAlign: 'center' }} role="status" aria-live="polite">
+          <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Checking reputation…</h3>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 32 }}>
+            Hashing {file.name} and querying the engine database.
+          </p>
+
+          <div
+            className="indeterminate-track"
+            style={{ width: '100%', height: 8, background: 'var(--bg-hover)', borderRadius: 4, overflow: 'hidden' }}
+          >
+            <div className="indeterminate-bar" style={{ height: '100%', background: 'var(--accent-purple)', borderRadius: 4 }} />
           </div>
-          <div style={{ marginTop: 12, fontSize: 14, fontWeight: 600, color: 'var(--accent-purple)' }}>{progress}% Complete</div>
-          
-          <div style={{ marginTop: 32, display: 'flex', justifyContent: 'center', gap: 24, color: 'var(--text-muted)', fontSize: 12 }}>
-            <span> Static Analysis</span>
-            <span style={{ opacity: progress > 30 ? 1 : 0.3 }}> Signature Check</span>
-            <span style={{ opacity: progress > 60 ? 1 : 0.3 }}> Behavioral Execution</span>
-          </div>
+
+          <p style={{ marginTop: 16, fontSize: 13, color: 'var(--text-muted)' }}>
+            This usually takes a few seconds.
+          </p>
         </div>
       )}
 

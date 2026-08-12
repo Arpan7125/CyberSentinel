@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import ParticleBackground from '../../components/ui/ParticleBackground';
+import AuthLayout from '../../components/ui/AuthLayout';
 
 export default function VerifyEmailPage() {
   const navigate = useNavigate();
@@ -36,15 +36,7 @@ export default function VerifyEmailPage() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-bg-effects">
-        <ParticleBackground />
-        <div className="auth-grid-lines" />
-        <div className="auth-glow-1" />
-        <div className="auth-glow-2" />
-      </div>
-
-      <div className="auth-container">
+    <AuthLayout>
         <div className="auth-card" style={{ textAlign: 'center' }}>
           <div className="auth-logo" style={{ justifyContent: 'center' }}>
             <div className="auth-logo-icon">🛡️</div>
@@ -112,7 +104,6 @@ export default function VerifyEmailPage() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }

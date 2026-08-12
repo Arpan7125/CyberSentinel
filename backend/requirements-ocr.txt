@@ -1,0 +1,16 @@
+# Optional: screenshot OCR (the "Screenshot Analyzer" feature).
+#
+# Install on top of requirements.txt:
+#     pip install -r requirements.txt -r requirements-ocr.txt
+#
+# EasyOCR depends on PyTorch, which is ~2 GB installed and will exceed the
+# build limits of Render's starter tier and most other small instances. Deploy
+# it on a host with room, or leave it out — `ocr_processor.py` already reports
+# "OCR unavailable" honestly rather than fabricating extracted text.
+#
+# The CPU-only PyTorch wheels are far smaller than the default CUDA builds:
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+-r requirements.txt
+
+easyocr>=1.7.1

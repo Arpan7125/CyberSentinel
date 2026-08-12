@@ -1,10 +1,7 @@
-import random
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from django.db.models import Count
-from django.utils import timezone
-from datetime import timedelta
+from rest_framework.permissions import AllowAny
 
 from .models import ScanLog, QuizQuestion
 from .serializers import ScanLogSerializer, QuizQuestionSerializer
@@ -12,8 +9,15 @@ from .ml_classifier import classifier
 from .url_analyzer import analyze_url
 from .ocr_processor import extract_text_from_image
 from .dashboard_utils import compute_dashboard_stats
+from .throttles import SCAN_THROTTLES
+
 
 class TextAnalysisView(APIView):
+    """Public scam-text analysis. Anonymous scans are allowed but tightly
+    rate-limited, since each one runs the classifier."""
+    permission_classes = [AllowAny]
+    throttle_classes = SCAN_THROTTLES
+
     def post(self, request):
         text = request.data.get("text", "")
         if not text:
@@ -35,6 +39,9 @@ class TextAnalysisView(APIView):
 
 
 class UrlAnalysisView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = SCAN_THROTTLES
+
     def post(self, request):
         url = request.data.get("url", "")
         if not url:
@@ -56,6 +63,9 @@ class UrlAnalysisView(APIView):
 
 
 class ScreenshotAnalysisView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = SCAN_THROTTLES
+
     def post(self, request):
         image_file = request.FILES.get("image", None)
         if not image_file:
@@ -129,12 +139,18 @@ class ScreenshotAnalysisView(APIView):
 
 
 class DashboardStatsView(APIView):
+    """Anonymous callers see only the stats for anonymous scans; signed-in users
+    see their own. Public so the marketing-site demo can render real numbers."""
+    permission_classes = [AllowAny]
+
     def get(self, request):
         user = request.user if request.user and request.user.is_authenticated else None
         return Response(compute_dashboard_stats(user), status=status.HTTP_200_OK)
 
 
 class QuizQuestionView(APIView):
+    permission_classes = [AllowAny]
+
     def get(self, request):
         # Prepopulate quiz questions if empty
         if QuizQuestion.objects.count() == 0:
@@ -215,15 +231,65 @@ class QuizQuestionView(APIView):
 
 
 import hashlib
+import logging
 import re
+
+import requests
+from django.conf import settings
+
 from .models import ScamReport
 
+logger = logging.getLogger(__name__)
+
+# Uploads are hashed in a streaming fashion, but still bounded so a single
+# request cannot exhaust a worker.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+def _vt_threat_label(vt_data, malicious):
+    """Prefer the malware family names the engines actually assigned over the
+    file's own (attacker-chosen) name."""
+    results = vt_data.get("last_analysis_results", {}) or {}
+    names = [
+        r.get("result") for r in results.values()
+        if r.get("category") == "malicious" and r.get("result")
+    ]
+    if names:
+        # The most frequently assigned label is the most reliable family name.
+        top = max(set(names), key=names.count)
+        return f"{top} ({malicious} engines)"
+    return f"Malware detected ({malicious} engines)"
+
+
+def _virustotal_key(user):
+    """A user's own VirusTotal key takes precedence over the platform key, so a
+    customer can use their own quota. Returns '' when neither is configured."""
+    if user is not None and user.is_authenticated:
+        try:
+            from .models import UserIntegration
+            config = UserIntegration.objects.filter(user=user).first()
+            if config and config.virustotal_api_key.strip():
+                return config.virustotal_api_key.strip()
+        except Exception:
+            logger.exception("Could not read the user's VirusTotal key; using the platform key")
+    return settings.VIRUSTOTAL_API_KEY
+
+
 class FileAnalysisView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = SCAN_THROTTLES
+
     def post(self, request):
         file_obj = request.FILES.get("file", None)
         if not file_obj:
             return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
+        if file_obj.size > MAX_UPLOAD_BYTES:
+            return Response(
+                {"error": f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB scan limit."},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            )
+
         # Calculate real SHA256 of the uploaded file
         sha256 = hashlib.sha256()
         for chunk in file_obj.chunks():
@@ -237,10 +303,7 @@ class FileAnalysisView(APIView):
         ext = file_name.split('.')[-1].lower() if '.' in file_name else ''
         is_dangerous = ext in ['exe', 'zip', 'scr', 'dll', 'bat', 'cmd', 'vbs', 'js', 'sh']
         
-        import os
-        import requests
-
-        vt_key = os.environ.get("VIRUSTOTAL_API_KEY")
+        vt_key = _virustotal_key(request.user)
         engines_total = 1
         detections_count = 1 if is_dangerous else 0
 
@@ -258,29 +321,81 @@ class FileAnalysisView(APIView):
 
         if vt_key:
             try:
-                vt_url = f"https://www.virustotal.com/api/v3/files/{file_hash}"
-                headers = {"x-api-key": vt_key}
-                vt_resp = requests.get(vt_url, headers=headers, timeout=5)
+                vt_resp = requests.get(
+                    f"https://www.virustotal.com/api/v3/files/{file_hash}",
+                    headers={"x-api-key": vt_key},
+                    timeout=10,
+                )
+
                 if vt_resp.status_code == 200:
                     vt_data = vt_resp.json().get("data", {}).get("attributes", {})
                     stats = vt_data.get("last_analysis_stats", {})
                     malicious = stats.get("malicious", 0)
+                    suspicious = stats.get("suspicious", 0)
                     total = sum(stats.values())
+
                     engines_total = total or 70
                     detections_count = malicious
                     is_dangerous = malicious > 0
-                    threat_name = vt_data.get("meaningful_name") or (f"Malware Detected ({malicious} engines)" if is_dangerous else "No Threats Detected")
-                    risk_score = min(99.0, round((malicious / max(1, total)) * 100, 1)) if total > 0 else (92.0 if is_dangerous else 4.0)
-                    risk_level = "Critical" if risk_score > 75 else ("High" if risk_score > 50 else ("Medium" if risk_score > 25 else "Low"))
-                    sandbox_status = f"VirusTotal Verified ({malicious}/{total} Flagged)"
-            except Exception:
-                pass
+
+                    # Detection *count* matters far more than the ratio: 5 of 70
+                    # engines flagging a file is a serious verdict, but a raw
+                    # 5/70 ratio would score it a misleading 7%.
+                    if malicious >= 10:
+                        risk_score, risk_level = 96.0, "Critical"
+                    elif malicious >= 5:
+                        risk_score, risk_level = 88.0, "Critical"
+                    elif malicious >= 3:
+                        risk_score, risk_level = 74.0, "High"
+                    elif malicious >= 1:
+                        # One or two hits are often false positives, but never "safe".
+                        risk_score, risk_level = 52.0, "Medium"
+                    elif suspicious >= 1:
+                        risk_score, risk_level = 35.0, "Medium"
+                    else:
+                        risk_score, risk_level = 3.0, "Low"
+
+                    threat_name = (
+                        _vt_threat_label(vt_data, malicious)
+                        if is_dangerous
+                        else "No engine flagged this file"
+                    )
+                    sandbox_status = f"VirusTotal verified ({malicious}/{total} engines flagged)"
+
+                elif vt_resp.status_code == 404:
+                    # VirusTotal has never seen this hash. That is genuinely
+                    # unknown, not clean — an unseen file is how novel malware
+                    # arrives, so the extension heuristic stands on its own.
+                    sandbox_status = "Unknown to VirusTotal (hash not in their corpus)"
+                    threat_name = (
+                        "Unrecognised file of a high-risk type — treat as untrusted"
+                        if is_dangerous
+                        else "Unscanned — this file is new to VirusTotal"
+                    )
+
+                elif vt_resp.status_code in (401, 403):
+                    logger.error("VirusTotal rejected the API key (HTTP %s)", vt_resp.status_code)
+                    sandbox_status = "Not scanned (VirusTotal rejected the configured API key)"
+
+                elif vt_resp.status_code == 429:
+                    logger.warning("VirusTotal quota exhausted")
+                    sandbox_status = "Not scanned (VirusTotal request quota exhausted)"
+
+                else:
+                    logger.warning("Unexpected VirusTotal response: HTTP %s", vt_resp.status_code)
+                    sandbox_status = f"Not scanned (VirusTotal returned HTTP {vt_resp.status_code})"
+
+            except requests.Timeout:
+                logger.warning("VirusTotal lookup timed out for %s", file_hash)
+                sandbox_status = "Not scanned (VirusTotal did not respond in time)"
+            except requests.RequestException:
+                logger.exception("VirusTotal lookup failed for %s", file_hash)
+                sandbox_status = "Not scanned (could not reach VirusTotal)"
 
         user = request.user if request.user and request.user.is_authenticated else None
-        # Log scan in database
         ScanLog.objects.create(
             user=user,
-            scan_type='TEXT',
+            scan_type='FILE',
             input_content=f"[File Scan: {file_name}] Hash: {file_hash}",
             risk_score=risk_score,
             risk_level=risk_level
@@ -301,9 +416,15 @@ class FileAnalysisView(APIView):
 
 
 import phonenumbers
-from phonenumbers import geocoder, carrier as phone_carrier, timezone
+# Aliased: `phonenumbers.timezone` would otherwise shadow django.utils.timezone
+# for the whole module.
+from phonenumbers import geocoder, carrier as phone_carrier, timezone as phone_timezone
+
 
 class PhoneAnalysisView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = SCAN_THROTTLES
+
     def post(self, request):
         phone = request.data.get("phone", "").strip()
         if not phone:
@@ -323,7 +444,7 @@ class PhoneAnalysisView(APIView):
             formatted_number = phonenumbers.format_number(parsed_phone, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
             real_country = geocoder.description_for_number(parsed_phone, "en") or "Unknown Region"
             real_carrier = phone_carrier.name_for_number(parsed_phone, "en") or "Unknown Carrier"
-            timezones = timezone.time_zones_for_number(parsed_phone)
+            timezones = phone_timezone.time_zones_for_number(parsed_phone)
             tz_str = timezones[0] if timezones else "Unknown Timezone"
             number_type = phonenumbers.number_type(parsed_phone)
             
@@ -351,16 +472,16 @@ class PhoneAnalysisView(APIView):
         reports_qs = ScamReport.objects.filter(Q(url_or_email__icontains=phone) | Q(description__icontains=phone))
         reports_count = reports_qs.count()
         
-        import os
-        import requests
-        
-        # Check for IPQualityScore API key
-        ipqs_api_key = os.environ.get("IPQS_API_KEY")
-        
-        # Default fallback values
+        ipqs_api_key = settings.IPQS_API_KEY
+
+        # Local reports alone are enough to raise suspicion even with no external
+        # feed available; this is the floor every branch below builds on.
+        local_score = min(99, 45 + reports_count * 15) if reports_count > 0 else 0
         num_type = real_type
-        
+        intel_source = 'local'
+
         if ipqs_api_key:
+            intel_source = 'ipqs'
             api_url = f"https://www.ipqualityscore.com/api/json/phone/{ipqs_api_key}/{phone}"
             try:
                 ipqs_response = requests.get(api_url, timeout=5).json()
@@ -396,47 +517,70 @@ class PhoneAnalysisView(APIView):
                         ai_assessment += f"Additionally, {reports_count} user(s) reported this number in our local database."
                         spam_score = min(99, spam_score + 15)  # Boost spam score if there are local reports
                 else:
-                    raise Exception(ipqs_response.get("message", "API request failed"))
-            except Exception as e:
-                spam_score = min(99, 45 + reports_count * 15) if reports_count > 0 else 0
+                    raise RuntimeError(ipqs_response.get("message", "API request failed"))
+            except Exception:
+                logger.exception("IPQualityScore lookup failed for %s", formatted_number)
+                intel_source = 'local'
+                spam_score = local_score
                 reputation = 'Dangerous' if spam_score > 60 else ('Suspicious' if reports_count > 0 else 'Clean')
-                ai_assessment = f"Live API lookup failed ({str(e)}). Falling back to local data. Local reports: {reports_count}."
-        else:
-            # Free API approach: Scrape shouldianswer.com as a fallback when no API key is present
-            import re
-            
+                ai_assessment = (
+                    "Live reputation lookup is unavailable, so this verdict is based only on "
+                    f"CyberSentinel's own reports ({reports_count} on record for this number)."
+                )
+        elif settings.ENABLE_PHONE_REPUTATION_SCRAPE:
+            # Opt-in only: this parses a third-party page's markup, so it breaks
+            # whenever they redesign. Never the default path.
+            intel_source = 'community'
             clean_number = "".join(filter(str.isdigit, phone))
+            spam_score = local_score
+            reputation = 'Clean'
+            ai_assessment = "No recent abuse or spam activity detected."
             try:
-                # Add headers to avoid basic blocks
-                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-                scrape_response = requests.get(f"https://www.shouldianswer.net/phone-number/{clean_number}", headers=headers, timeout=5)
-                
-                spam_score = min(99, 45 + reports_count * 15) if reports_count > 0 else 0
-                reputation = 'Clean'
-                ai_assessment = "No recent abuse or spam activity detected."
-                
-                # Check meta description for community rating
+                scrape_response = requests.get(
+                    f"https://www.shouldianswer.net/phone-number/{clean_number}",
+                    headers={'User-Agent': 'CyberSentinel/1.0 (+https://cybersentinel.ai)'},
+                    timeout=5,
+                )
                 match = re.search(r'<meta name="description" content="(.*?)"', scrape_response.text)
                 if match:
                     desc = match.group(1).lower()
-                    if "negative" in desc or "spam" in desc or "scam" in desc:
+                    if any(w in desc for w in ("negative", "spam", "scam")):
                         spam_score = max(spam_score, 85)
                         reputation = 'Dangerous'
-                        ai_assessment = f"This number is flagged as NEGATIVE or SPAM by the online community."
+                        ai_assessment = "This number is flagged as negative or spam by the online community."
                     elif "neutral" in desc:
                         spam_score = max(spam_score, 45)
                         reputation = 'Suspicious'
-                        ai_assessment = f"This number has a neutral/mixed reputation."
+                        ai_assessment = "This number has a neutral or mixed community reputation."
                     elif "positive" in desc:
-                        spam_score = max(spam_score, 0)
-                        ai_assessment = f"This number is rated as POSITIVE/SAFE by the online community."
-                        
+                        ai_assessment = "This number is rated positive/safe by the online community."
+
                 if reports_count > 0:
-                    ai_assessment += f" Additionally, {reports_count} user(s) reported this number in our local database."
-            except Exception as e:
-                spam_score = min(99, 45 + reports_count * 15) if reports_count > 0 else 0
+                    ai_assessment += f" {reports_count} CyberSentinel user(s) also reported this number."
+            except requests.RequestException:
+                logger.warning("Community reputation lookup failed for %s", formatted_number)
+                intel_source = 'local'
                 reputation = 'Dangerous' if spam_score > 60 else ('Suspicious' if reports_count > 0 else 'Clean')
-                ai_assessment = f"Free live lookup failed ({str(e)}). Falling back to local data. Local reports: {reports_count}."
+                ai_assessment = (
+                    "Community reputation lookup is unavailable, so this verdict is based only on "
+                    f"CyberSentinel's own reports ({reports_count} on record for this number)."
+                )
+        else:
+            # No external feed configured — say so plainly rather than implying a
+            # clean number was verified against a threat database.
+            spam_score = local_score
+            reputation = 'Dangerous' if spam_score > 60 else ('Suspicious' if reports_count > 0 else 'Unverified')
+            if reports_count > 0:
+                ai_assessment = (
+                    f"{reports_count} CyberSentinel user(s) reported this number. "
+                    "No external reputation feed is configured, so this reflects community reports only."
+                )
+            else:
+                ai_assessment = (
+                    "No external phone-reputation feed is configured and no CyberSentinel user has "
+                    "reported this number. That is not the same as verified-safe — set IPQS_API_KEY "
+                    "to enable live reputation scoring."
+                )
 
         # Retrieve comments from database reports
         community_comments = []
@@ -446,7 +590,35 @@ class PhoneAnalysisView(APIView):
                 text = r.description[:100] + ('...' if len(r.description) > 100 else '')
                 date_str = r.created_at.strftime("%Y-%m-%d")
                 community_comments.append({"author": author, "text": text, "date": date_str})
-                
+
+        # Phone lookups are scans too — logging them keeps the dashboard,
+        # reports, and per-tool usage metrics consistent across every tool.
+        if spam_score >= 80:
+            risk_level = "Critical"
+        elif spam_score >= 60:
+            risk_level = "High"
+        elif spam_score >= 30:
+            risk_level = "Medium"
+        elif intel_source == 'local' and reports_count == 0:
+            risk_level = "Unknown"
+        else:
+            risk_level = "Low"
+
+        user = request.user if request.user and request.user.is_authenticated else None
+        ScanLog.objects.create(
+            user=user,
+            scan_type='PHONE',
+            input_content=f"[Phone Lookup: {formatted_number}]",
+            risk_score=float(spam_score),
+            risk_level=risk_level,
+        )
+
+        last_reported = "N/A"
+        if reports_count > 0:
+            latest = reports_qs.order_by('-created_at').first()
+            if latest:
+                last_reported = latest.created_at.strftime("%Y-%m-%d")
+
         return Response({
             "number": formatted_number,
             "country": f"{real_country} ({tz_str})",
@@ -455,7 +627,9 @@ class PhoneAnalysisView(APIView):
             "reputation": reputation,
             "spamScore": spam_score,
             "reports": reports_count,
-            "lastReported": "Recent" if reports_count > 0 else "N/A",
+            "lastReported": last_reported,
             "aiAssessment": ai_assessment,
+            "intelSource": intel_source,
+            "risk_level": risk_level,
             "communityComments": community_comments
         }, status=status.HTTP_200_OK)

@@ -9,7 +9,12 @@ import ErrorBoundary from './components/ui/ErrorBoundary';
 // Layouts (loaded eagerly — they wrap pages)
 import PublicLayout from './layouts/PublicLayout';
 import CustomerLayout from './layouts/CustomerLayout';
-import AdminWorkspaceLayout from './components/admin/AdminWorkspaceLayout';
+
+// The admin workspace statically imports every admin module, so importing it
+// eagerly here pulled the whole administrative surface into the entry bundle —
+// paid for by every anonymous visitor who will never see it. The /admin/* route
+// already renders inside the Suspense boundary below, so it splits cleanly.
+const AdminWorkspaceLayout = lazy(() => import('./components/admin/AdminWorkspaceLayout'));
 
 // Public Marketing Pages (lazy loaded)
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -35,15 +40,20 @@ const SecurityPolicyPage = lazy(() => import('./pages/SecurityPolicyPage'));
 const ResponsibleDisclosurePage = lazy(() => import('./pages/ResponsibleDisclosurePage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
-// Auth Pages
-const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
-const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
+// Auth Pages (eagerly imported to prevent Vite HMR dynamic fetch failures)
+import LoginPage from './pages/auth/LoginPage';
+import RegisterPage from './pages/auth/RegisterPage';
 const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage'));
 const VerifyEmailPage = lazy(() => import('./pages/auth/VerifyEmailPage'));
 const OTPVerificationPage = lazy(() => import('./pages/auth/OTPVerificationPage'));
 const AdminLoginPage = lazy(() => import('./pages/admin/AdminLoginPage'));
-const ApiIntegrationsPage = lazy(() => import('./pages/admin/ApiIntegrationsPage'));
+// ApiIntegrationsPage is deliberately not lazy-loaded here. It is not routed
+// from this file at all — AdminWorkspaceLayout imports and renders it directly
+// as a workspace module. The lazy() binding that used to sit on this line was
+// never referenced by any route, and its only real effect was to defeat the
+// code split: because the same module is also imported statically, the bundler
+// warned that the dynamic import could not move it into a chunk of its own.
 
 // Customer Pages
 const CustomerDashboard = lazy(() => import('./pages/customer/DashboardPage'));

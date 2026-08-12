@@ -1,90 +1,201 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { AlertTriangle, RefreshCw, Users, ShieldAlert, Activity, Mail } from 'lucide-react';
+import { analyticsService } from '../../services/api';
+import { useApiData, formatNumber } from '../../hooks/useApiData';
+import MetricTile from '../../components/ui/MetricTile';
+import { TrendChart, SeverityBars, forecastCaption } from '../../components/charts';
+
+/** Metrics where a fall is the good outcome. */
+const LOWER_IS_BETTER = new Set(['Threats Detected', 'Threat Hit Rate']);
+
+const RANGES = [
+  { label: '7 days', days: 7 },
+  { label: '30 days', days: 30 },
+  { label: '90 days', days: 90 },
+];
+
+const SCAN_TYPE_LABELS = {
+  TEXT: 'Text messages',
+  URL: 'Links',
+  FILE: 'Files',
+  SCREENSHOT: 'Screenshots',
+  PHONE: 'Phone numbers',
+};
+
+const ICONS = {
+  'New Accounts': <Users size={16} />,
+  'Scans Performed': <Activity size={16} />,
+  'Threats Detected': <ShieldAlert size={16} />,
+  'Newsletter Signups': <Mail size={16} />,
+};
 
 export default function AnalyticsPage() {
-  const trafficMetrics = [
-    { label: 'Total Pageviews (30d)', value: '0', change: '0.0%', trend: 'neutral' },
-    { label: 'Unique Visitors', value: '0', change: '0.0%', trend: 'neutral' },
-    { label: 'Avg Session Duration', value: '0m 00s', change: '0.0%', trend: 'neutral' },
-    { label: 'Bounce Rate', value: '0.0%', change: '0.0%', trend: 'neutral' },
-  ];
+  const [days, setDays] = useState(30);
+  const { data, loading, error, refetch } = useApiData(
+    () => analyticsService.adminAnalytics(days),
+    [days],
+  );
 
-  const conversionStats = [
-    { label: 'Free Trial Registrations', value: '0', rate: '0.0% conversion' },
-    { label: 'Demo Request Submissions', value: '0', rate: '0.0% conversion' },
-    { label: 'Newsletter Subscriptions', value: '0', rate: '0.0% conversion' },
-    { label: 'AI Conversations Started', value: '0', rate: '0.0% engage rate' }
-  ];
+  const timeseries = data?.timeseries || [];
+  const labels = timeseries.map((p) => p.date);
+
+  const scanTypes = Object.entries(data?.scan_type_distribution || {})
+    .map(([key, count]) => ({ label: SCAN_TYPE_LABELS[key] || key, value: count }))
+    .sort((a, b) => b.value - a.value);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      <div>
-        <h1 className="page-title">Platform Analytics</h1>
-        <p className="page-subtitle">Monitor traffic volume, conversion rates, subscription growth, and AI usage metrics</p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-display-xs font-bold text-text-primary">Platform Analytics</h1>
+          <p className="mt-1 text-sm text-text-secondary">
+            Traffic, engagement, and conversion measured from platform activity — no sampled or
+            estimated figures.
+          </p>
+        </div>
 
-      {/* Traffic KPI row */}
-      <div className="stat-card-grid">
-        {trafficMetrics.map((m, i) => (
-          <div key={i} className="stat-card">
-            <div className="stat-card-header">
-              <span className="stat-card-label">{m.label}</span>
-            </div>
-            <div className="stat-card-value">{m.value}</div>
-            <div className={`stat-card-change ${m.trend}`}>
-              {m.change} vs last month
-            </div>
-          </div>
+        <div
+          className="inline-flex rounded-md border border-border-subtle p-0.5"
+          role="group"
+          aria-label="Reporting period"
+        >
+          {RANGES.map((r) => (
+            <button
+              key={r.days}
+              type="button"
+              onClick={() => setDays(r.days)}
+              aria-pressed={days === r.days}
+              className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                days === r.days
+                  ? 'bg-accent text-text-inverse'
+                  : 'text-text-secondary hover:text-text-primary'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {error && (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-accent-red/40 bg-bg-card p-4"
+          role="alert"
+        >
+          <AlertTriangle size={18} className="text-accent-red" aria-hidden="true" />
+          <p className="flex-1 text-sm text-text-secondary">
+            {error.message || 'Could not load analytics.'}
+          </p>
+          <button
+            type="button"
+            onClick={refetch}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle px-3 py-1.5 text-xs font-medium text-text-primary transition-colors hover:border-border-strong"
+          >
+            <RefreshCw size={13} aria-hidden="true" />
+            Retry
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {(data?.traffic_metrics || Array.from({ length: 4 }, () => ({}))).map((m, i) => (
+          <MetricTile
+            key={m.label || i}
+            metric={m}
+            loading={loading}
+            icon={ICONS[m.label]}
+            lowerIsBetter={LOWER_IS_BETTER.has(m.label)}
+          />
         ))}
       </div>
 
-      {/* Conversion stats & growth grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-        {/* Conversion channels */}
-        <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <h3 className="section-title">Conversion Operations</h3>
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Event Action</th>
-                  <th>Conversions</th>
-                  <th>Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {conversionStats.map((stat, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 650 }}>{stat.label}</td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.value}</td>
-                    <td><span className="badge badge-admin" style={{ padding: '3px 8px' }}>{stat.rate}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <TrendChart
+        title="Scans and threats per day"
+        subtitle={`Daily volume across the last ${days} days, with a ${data?.forecast?.scans?.horizon_days || 7}-day projection.`}
+        labels={labels}
+        series={[
+          {
+            key: 'scans',
+            label: 'Scans',
+            values: timeseries.map((p) => p.scans),
+            color: 'var(--chart-series-1)',
+          },
+          {
+            key: 'threats',
+            label: 'Threats',
+            values: timeseries.map((p) => p.threats),
+            color: 'var(--chart-series-2)',
+          },
+        ]}
+        loading={loading}
+        error={error}
+        onRetry={refetch}
+        height={280}
+        footnote={forecastCaption(data?.forecast?.scans)}
+      />
 
-        {/* AI helper stats */}
-        <div className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <h3 className="section-title">AI Assistant Engagements</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <section className="rounded-lg border border-border-subtle bg-bg-card p-5 shadow-sm">
+          <h3 className="mb-1 text-sm font-semibold text-text-primary">Conversion and engagement</h3>
+          <p className="mb-4 text-xs text-text-muted">
+            Counted from accounts, scans, and leads recorded in this period.
+          </p>
+
+          {loading ? (
+            <div className="flex flex-col gap-3">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="h-12 animate-pulse rounded-md bg-bg-tertiary" />
+              ))}
+            </div>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {(data?.conversion_metrics || []).map((m) => (
+                <li
+                  key={m.label}
+                  className="flex items-center justify-between gap-4 rounded-md border border-border-subtle bg-bg-secondary px-4 py-3"
+                >
+                  <span className="text-sm text-text-secondary">{m.label}</span>
+                  <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-text-primary">
+                    {m.unit === '%' ? `${m.value}%` : formatNumber(m.value)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <SeverityBars
+          title="What people are scanning"
+          subtitle={`Scan volume by input type over the last ${days} days.`}
+          items={scanTypes}
+          valueLabel="Scans"
+          loading={loading}
+          error={error}
+          onRetry={refetch}
+          emptyLabel="No scans have been run in this period."
+        />
+      </div>
+
+      {data?.totals && (
+        <section className="rounded-lg border border-border-subtle bg-bg-card p-5 shadow-sm">
+          <h3 className="mb-4 text-sm font-semibold text-text-primary">Platform totals (all time)</h3>
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             {[
-              { label: 'Overall AI Helpfulness Score', value: '0.00 / 5.00', details: '0% positive user response rating' },
-              { label: 'Auto-resolved Inquiries', value: '0.0%', details: 'Inquiries answered without ticket escalations' },
-              { label: 'Top AI Trigger Intent', value: 'N/A', details: 'Not enough data' },
-              { label: 'Demo Bookings via AI', value: '0 bookings', details: 'Initiated directly inside AI chats' },
-            ].map((stat, idx) => (
-              <div key={idx} style={{ background: 'var(--bg-secondary)', padding: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>{stat.label}</span>
-                  <span style={{ fontSize: 14, fontFamily: 'var(--font-mono)', fontWeight: 800 }}>{stat.value}</span>
-                </div>
-                <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>{stat.details}</p>
+              ['Registered users', data.totals.users],
+              ['Paying accounts', data.totals.paying_users],
+              ['Scans run', data.totals.scans],
+              ['Open tickets', data.totals.open_tickets],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <dt className="text-xs text-text-muted">{label}</dt>
+                <dd className="mt-1 font-mono text-xl font-bold tabular-nums text-text-primary">
+                  {formatNumber(value)}
+                </dd>
               </div>
             ))}
-          </div>
-        </div>
-      </div>
+          </dl>
+        </section>
+      )}
     </div>
   );
 }

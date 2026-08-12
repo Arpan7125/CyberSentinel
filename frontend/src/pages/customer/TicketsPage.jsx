@@ -198,8 +198,8 @@ export default function TicketsPage() {
                 style={{
                   padding: 14, borderRadius: 'var(--radius-md)',
                   alignSelf: r.sender === activeTicket.customer ? 'flex-end' : 'flex-start',
-                  background: r.sender === activeTicket.customer ? 'rgba(11, 87, 208, 0.08)' : '#f8fafc',
-                  border: `1px solid ${r.sender === activeTicket.customer ? '#0b57d0' : 'var(--border-subtle)'}`,
+                  background: r.sender === activeTicket.customer ? 'var(--accent-soft)' : 'var(--bg-tertiary)',
+                  border: `1px solid ${r.sender === activeTicket.customer ? 'var(--accent)' : 'var(--border-subtle)'}`,
                   maxWidth: '85%',
                   display: r.is_internal ? 'none' : 'block' // Hide internal notes from customer
                 }}

@@ -93,6 +93,7 @@ export const authService = {
   forgotPassword: (email) => api.post('/auth/forgot-password/', { email }),
   resetPassword: (data) => api.post('/auth/reset-password/', data),
   googleLogin: (credential) => api.post('/auth/google-login/', { credential }),
+  microsoftLogin: (credential) => api.post('/auth/microsoft-login/', { credential }),
   adminRegister: (data) => api.post('/auth/admin-register/', data),
   adminLogin: (email, auth_key) => api.post('/auth/admin-login/', { email, auth_key }),
   deleteAccount: () => api.delete('/auth/profile/'),
@@ -134,6 +135,8 @@ export const adminService = {
 
 export const saasService = {
   getBlogPosts: (params = '') => api.get(`/blogs/${params}`),
+  // Live, externally-sourced advisories (CISA Known Exploited Vulnerabilities).
+  getThreatIntelFeed: (limit = 24) => api.get(`/intel/feed/?limit=${limit}`),
   getBlogPost: (id) => api.get(`/blogs/${id}/`),
   createBlogPost: (data) => api.post('/blogs/', data),
   updateBlogPost: (id, data) => api.patch(`/blogs/${id}/`, data),
@@ -184,6 +187,46 @@ export const supportService = {
   updateTicket: (id, data) => api.patch(`/tickets/${id}/`, data),
   assignTicket: (id, assignee_id) => api.post(`/tickets/${id}/assign/`, { assignee_id }),
   replyTicket: (id, content, is_internal) => api.post(`/tickets/${id}/reply/`, { content, is_internal }),
+};
+
+/**
+ * Live analytics. Every figure these return is computed from real rows in the
+ * database — these endpoints exist to replace the hard-coded arrays the
+ * dashboards used to render. When there is no data yet they report zero and
+ * set an explicit empty-state flag rather than inventing plausible numbers.
+ */
+export const analyticsService = {
+  adminAnalytics: (days = 30) => api.get(`/admin/analytics/?days=${days}`),
+  adminRevenue: (months = 7) => api.get(`/admin/revenue/?months=${months}`),
+  adminThreatCenter: (days = 30) => api.get(`/admin/threat-center/?days=${days}`),
+};
+
+/** Per-user insights, usage, and forecasts. */
+export const insightsService = {
+  insights: (days = 30) => api.get(`/insights/?days=${days}`),
+  usage: () => api.get('/usage/'),
+  forecast: (days = 30) => api.get(`/forecast/?days=${days}`),
+};
+
+/**
+ * Which optional integrations the server actually has configured. Lets the UI
+ * hide a Google button rather than rendering one that fails when clicked.
+ */
+export const configService = {
+  publicConfig: () => api.get('/config/public/'),
+};
+
+export const notificationService = {
+  list: () => api.get('/notifications/'),
+  markRead: (id) => api.post(`/notifications/${id}/mark_read/`),
+  markAllRead: () => api.post('/notifications/mark_all_read/'),
+  /** Admin only. Creates one in-app notification per registered user. */
+  broadcast: (data) => api.post('/notifications/broadcast/', data),
+};
+
+export const healthService = {
+  status: () => api.get('/health/'),
+  readiness: () => api.get('/health/ready/'),
 };
 
 export const adminIntegrationService = {

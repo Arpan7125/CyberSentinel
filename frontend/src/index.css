@@ -27,6 +27,7 @@
   --color-accent-cyan: var(--accent-cyan);
   --color-accent-indigo: var(--accent-indigo);
   --color-accent-orange: var(--accent-orange);
+  --color-accent-gold: var(--accent-gold);
 
   --color-text-primary: var(--text-primary);
   --color-text-secondary: var(--text-secondary);
@@ -103,6 +104,12 @@
   --topbar-height: 64px;
   --pub-navbar-height: 68px;
 
+  /* Vertical rhythm for the public/marketing sections. One scale, so every
+     section breathes identically instead of the ad-hoc 40/60/80/100px values
+     these used to carry — that mismatch is what made the gaps read as random. */
+  --space-section: clamp(48px, 5vw, 72px);
+  --space-section-header: clamp(28px, 3vw, 40px);
+
   --gradient-brand: linear-gradient(135deg, var(--accent) 0%, var(--accent-violet) 100%);
   --gradient-text: linear-gradient(120deg, var(--text-primary) 20%, var(--accent) 100%);
 }
@@ -121,11 +128,11 @@ body.theme-light {
   --bg-hover: rgba(15, 23, 42, 0.04);
   --bg-active: rgba(15, 23, 42, 0.08);
 
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-soft: rgba(37, 99, 235, 0.10);
-  --accent-muted: #e6eeff;
-  --accent-glow: rgba(37, 99, 235, 0.28);
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: rgba(79, 70, 229, 0.10);
+  --accent-muted: #eceafd;
+  --accent-glow: rgba(79, 70, 229, 0.28);
   --accent-violet: #7c3aed;
   --accent-green: #059669;
   --accent-red: #dc2626;
@@ -134,17 +141,19 @@ body.theme-light {
   --accent-cyan: #0891b2;
   --accent-indigo: #4f46e5;
   --accent-orange: #ea580c;
+  --accent-gold: #b45309;
+  --accent-gold-soft: rgba(180, 83, 9, 0.10);
 
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #94a3b8;
-  --text-accent: #2563eb;
+  --text-accent: #4f46e5;
   --text-inverse: #ffffff;
 
   --border-subtle: #e6eaf1;
   --border-card: #e6eaf1;
   --border-strong: #cbd5e1;
-  --border-focus: #2563eb;
+  --border-focus: #4f46e5;
   --border-input: #cbd5e1;
 
   --elev-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
@@ -169,11 +178,11 @@ body.theme-dark {
   --bg-hover: rgba(255, 255, 255, 0.045);
   --bg-active: rgba(255, 255, 255, 0.08);
 
-  --accent: #4f8cff;
-  --accent-hover: #7aa7ff;
-  --accent-soft: rgba(79, 140, 255, 0.14);
-  --accent-muted: rgba(79, 140, 255, 0.16);
-  --accent-glow: rgba(79, 140, 255, 0.45);
+  --accent: #818cf8;
+  --accent-hover: #a5b0fb;
+  --accent-soft: rgba(129, 140, 248, 0.16);
+  --accent-muted: rgba(129, 140, 248, 0.18);
+  --accent-glow: rgba(129, 140, 248, 0.45);
   --accent-violet: #a78bfa;
   --accent-green: #34d399;
   --accent-red: #f87171;
@@ -182,17 +191,19 @@ body.theme-dark {
   --accent-cyan: #22d3ee;
   --accent-indigo: #818cf8;
   --accent-orange: #fb923c;
+  --accent-gold: #f0b429;
+  --accent-gold-soft: rgba(240, 180, 41, 0.14);
 
   --text-primary: #eef1f7;
   --text-secondary: #a4aec0;
   --text-muted: #6b7688;
-  --text-accent: #7aa7ff;
+  --text-accent: #a5b0fb;
   --text-inverse: #080a10;
 
   --border-subtle: #1c2130;
   --border-card: #1c2130;
   --border-strong: #2b3244;
-  --border-focus: #4f8cff;
+  --border-focus: #818cf8;
   --border-input: #2b3244;
 
   --elev-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -230,6 +241,8 @@ body.theme-amber {
   --accent-cyan: #fbbf24;
   --accent-indigo: #fdba74;
   --accent-orange: #fb923c;
+  --accent-gold: #ffbf47;
+  --accent-gold-soft: rgba(255, 191, 71, 0.14);
 
   --text-primary: #f7ecd8;
   --text-secondary: #d3c2a1;
@@ -252,6 +265,60 @@ body.theme-amber {
   --grid-line: rgba(255, 191, 71, 0.04);
 }
 
+/* ── Chart tokens ───────────────────────────────────────────────────────
+   Deliberately separate from the UI accent tokens. Chart marks sit on a
+   surface and must stay distinguishable under colour-vision deficiency,
+   which is a stricter requirement than UI text has to meet — the amber
+   theme's #ffbf47 accent, for instance, is far too light to read as a data
+   mark on a dark surface at any chroma.
+
+   So there are two chart palettes keyed to the SURFACE (light or dark),
+   not three keyed to the theme. The amber theme is a dark surface and so
+   uses the dark chart palette; its identity still comes through in the
+   surrounding chrome.
+
+   Both palettes were verified with the dataviz palette validator against
+   their surface: lightness band, chroma floor, CVD separation
+   (protan/deutan/tritan), normal-vision floor, and >= 3:1 contrast. Do not
+   hand-tune these values without re-running that check. */
+:root,
+body.theme-light {
+  --chart-series-1: #2563eb;   /* primary volume: scans, revenue */
+  --chart-series-2: #dc2626;   /* threats */
+  --chart-grid: rgba(15, 23, 42, 0.08);
+  --chart-axis-text: #64748b;
+  --chart-forecast-band: rgba(37, 99, 235, 0.16);
+
+  /* Severity uses the reserved status colours, never the categorical series
+     colours, and always renders with a visible text label beside the mark so
+     meaning never depends on colour alone. */
+  --sev-critical: #dc2626;
+  --sev-high: #ea580c;
+  --sev-medium: #d97706;
+  --sev-low: #059669;
+  --sev-unknown: #64748b;
+}
+
+body.theme-dark,
+body.theme-amber {
+  --chart-series-1: #4f8cff;
+  --chart-series-2: #e5484d;
+  --chart-grid: rgba(255, 255, 255, 0.09);
+  --chart-axis-text: #8b96aa;
+  --chart-forecast-band: rgba(79, 140, 255, 0.20);
+
+  --sev-critical: #f87171;
+  --sev-high: #fb923c;
+  --sev-medium: #fbbf24;
+  --sev-low: #34d399;
+  --sev-unknown: #8b96aa;
+}
+
+body.theme-amber {
+  --chart-grid: rgba(255, 191, 71, 0.10);
+  --chart-axis-text: #9b8a68;
+}
+
 /* Legacy aliases — older rules still reference these names directly. */
 :root, body.theme-light, body.theme-dark, body.theme-amber {
   --shadow-sm: var(--elev-sm);
@@ -260,9 +327,30 @@ body.theme-amber {
   --shadow-xl: var(--elev-xl);
 }
 
-/* ── Reset ──────────────────────────────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Reset ────────────────────────────────────────────────────────────
+   MUST stay inside `@layer base`. Tailwind emits every utility into
+   `@layer utilities`, and an UNLAYERED rule beats any layered one no matter
+   how low its specificity — so an unlayered `* { margin: 0; padding: 0 }`
+   silently defeats every margin and padding utility in the app (that is
+   exactly the bug that made `2` and `67%` render as `267%`). Inside `base`
+   the normal layer order applies and utilities win. */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+}
 html { scroll-behavior: smooth; background-color: var(--bg-primary); }
+
+/* Hide the page scrollbar chrome. Scrolling itself is untouched — wheel,
+   touch, keyboard (arrows/space/PgUp/PgDn) and programmatic scrolling all
+   still work; only the visual bar is gone.
+
+   Deliberately scoped to the document scroller only. Inner scroll areas (the
+   telemetry log, the dashboard sidebar) keep their own affordance, because a
+   panel that scrolls with no bar and no page-level cue is undiscoverable. */
+html {
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* legacy Edge/IE */
+}
+html::-webkit-scrollbar { width: 0; height: 0; }  /* Chromium, Safari */
 body {
   font-family: var(--font-sans);
   background: var(--bg-primary);
@@ -352,6 +440,73 @@ img { max-width: 100%; height: auto; }
 
 /* Accent ring/glow for emphasis states */
 .ring-glow { box-shadow: 0 0 0 1px var(--accent-soft), 0 8px 32px -8px var(--accent-glow); }
+
+/* Ambient light blob — slow-drifting glow behind hero/cinematic sections.
+   Kept off pure black per the Modern Dark Cinema style (OLED smear). */
+.ambient-blob {
+  position: absolute; border-radius: 50%; pointer-events: none; z-index: 0;
+  filter: blur(64px); opacity: 0.35;
+  background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+  animation: ambientDrift 18s ease-in-out infinite;
+}
+@keyframes ambientDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(3%, -4%) scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ambient-blob { animation: none; }
+}
+
+/* ── 3D depth system ──────────────────────────────────────────────────
+   CSS 3D rather than a WebGL scene: this is decorative depth on marketing
+   cards, which does not justify shipping a renderer to every visitor.
+   Everything here is GPU-composited (transform/opacity only) and collapses
+   to flat under reduced motion. */
+
+/* Parent that establishes the vanishing point for a grid of tilting cards. */
+.scene-3d { perspective: 1100px; perspective-origin: 50% 40%; }
+
+.tilt-3d { transform-style: preserve-3d; will-change: auto; }
+
+/* Children that should float above the card face while it tilts. Depth is
+   what sells the effect — without it a tilt just looks like a skew. */
+.tilt-3d [data-depth='1'] { transform: translateZ(18px); }
+.tilt-3d [data-depth='2'] { transform: translateZ(34px); }
+
+/* Specular sheen that tracks the tilt. Kept very low alpha: on the light
+   theme a strong highlight reads as a smudge, not as gloss. */
+.tilt-3d-sheen {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(125deg, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0.55) 50%, rgba(255, 255, 255, 0) 60%);
+  opacity: 0; transition: opacity .35s ease;
+}
+.tilt-3d:hover .tilt-3d-sheen { opacity: .5; }
+
+/* Floating idle motion for hero ornaments. Decorative layers only — never
+   text, which is uncomfortable to read against continuous movement. */
+@keyframes float3d {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
+  50%      { transform: translate3d(0, -14px, 0) rotate(1.5deg); }
+}
+.float-3d { animation: float3d 7s ease-in-out infinite; }
+.float-3d-slow { animation: float3d 11s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tilt-3d { transform: none !important; transition: none !important; }
+  .tilt-3d-sheen { display: none; }
+  .float-3d, .float-3d-slow { animation: none; }
+  .scene-3d { perspective: none; }
+}
+
+/* Trust & Authority badge row — certifications/compliance marks */
+.trust-badge-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.trust-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: var(--radius-full);
+  background: var(--accent-gold-soft); border: 1px solid var(--border-subtle);
+  color: var(--text-secondary); font-size: 12px; font-weight: 600;
+}
+.trust-badge svg { color: var(--accent-gold); flex-shrink: 0; }
 
 /* Hover lift used across interactive cards */
 .hover-lift { transition: transform .25s var(--ease-out-expo), box-shadow .25s var(--ease-out-expo), border-color .25s; }
@@ -628,6 +783,89 @@ img { max-width: 100%; height: auto; }
 /* ══════════════════════════════════════════════════════════════════════
    AUTH PAGES
    ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Shared auth shell (AuthLayout) ───────────────────────────────────
+   Replaces the ~390px card stranded in the middle of a 1440px viewport.
+   Brand panel carries the left half on desktop and is dropped entirely
+   below 900px, where the form should own the screen. */
+.auth-shell {
+  min-height: 100vh; min-height: 100dvh;
+  display: grid; grid-template-columns: 1.05fr 1fr;
+  background: var(--bg-primary);
+}
+
+.auth-brand-panel {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center;
+  padding: 56px clamp(40px, 4vw, 72px);
+  background:
+    radial-gradient(120% 90% at 15% 10%, var(--accent-soft) 0%, transparent 60%),
+    linear-gradient(160deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+  border-right: 1px solid var(--border-subtle);
+}
+.auth-brand-fx { position: absolute; inset: 0; pointer-events: none; opacity: .5; }
+.auth-brand-inner {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; gap: 40px;
+  max-width: 460px; margin-inline: auto;
+}
+.auth-brand-logo { display: flex; align-items: center; gap: 11px; font-size: 19px; font-weight: 800; letter-spacing: -.02em; }
+.auth-brand-title { font-size: clamp(28px, 2.6vw, 38px); font-weight: 800; letter-spacing: -.03em; line-height: 1.12; }
+.auth-brand-sub { margin-top: 14px; font-size: 15px; line-height: 1.65; color: var(--text-secondary); }
+
+.auth-brand-points { list-style: none; display: flex; flex-direction: column; gap: 20px; }
+.auth-brand-points li { display: flex; gap: 13px; align-items: flex-start; }
+.auth-brand-point-icon {
+  flex-shrink: 0; display: grid; place-items: center; width: 32px; height: 32px;
+  border-radius: 9px; background: var(--accent-soft); color: var(--accent);
+}
+.auth-brand-points strong { display: block; font-size: 13.5px; font-weight: 650; color: var(--text-primary); }
+.auth-brand-points em { display: block; margin-top: 3px; font-size: 12.5px; font-style: normal; line-height: 1.55; color: var(--text-secondary); }
+
+.auth-brand-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+.auth-brand-badges span {
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-secondary); background: var(--bg-hover);
+  border: 1px solid var(--border-subtle); border-radius: 999px; padding: 5px 12px;
+}
+
+.auth-form-panel {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  padding: 56px 24px;
+}
+.auth-form-col { width: 100%; max-width: 400px; }
+.auth-form-col.is-wide { max-width: 520px; }
+
+/* Five of these pages wrap their form in `.auth-card` and login does not.
+   Inside the split shell the panel already provides the surface, so a bordered
+   card there reads as a box inside a box — and made login look unrelated to
+   its own siblings. Flattening the card here unifies all six without editing
+   five files; `.auth-card` keeps its normal styling anywhere else. */
+.auth-shell .auth-card {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+}
+.auth-panel-actions {
+  position: absolute; top: 28px; right: 32px;
+  display: flex; align-items: center; gap: 20px;
+}
+.auth-back-home { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-decoration: none; }
+.auth-back-home:hover { color: var(--accent); }
+.auth-panel-actions a:not(.auth-back-home) { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.auth-panel-actions a:not(.auth-back-home):hover { text-decoration: underline; }
+
+/* The brand panel is reassurance, not content — below 900px the form takes
+   the whole screen rather than being squeezed beside a decorative column. */
+@media (max-width: 900px) {
+  .auth-shell { grid-template-columns: 1fr; }
+  .auth-brand-panel { display: none; }
+  .auth-form-panel { padding: 72px 20px 48px; }
+}
+
 .auth-page {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
   position: relative; overflow: hidden;
@@ -780,7 +1018,9 @@ img { max-width: 100%; height: auto; }
 .dash-topbar-left { display: flex; align-items: center; gap: 12px; }
 .dash-topbar-right { display: flex; align-items: center; gap: 12px; }
 .dash-topbar-title { font-size: 14px; font-weight: 600; }
-.dash-page { padding: 24px; flex: 1; }
+/* Scales with the viewport: a flat 24px that reads fine on a laptop leaves
+   wide screens looking pinched against the sidebar. */
+.dash-page { padding: clamp(20px, 2.2vw, 34px); flex: 1; }
 
 /* Sidebar Toggle */
 .dash-sidebar-toggle {
@@ -923,30 +1163,126 @@ img { max-width: 100%; height: auto; }
 /* ══════════════════════════════════════════════════════════════════════
    PUBLIC PAGE SECTIONS (Marketing)
    ══════════════════════════════════════════════════════════════════════ */
-.section-header { text-align: center; max-width: 640px; margin: 0 auto 48px; }
+/* 640px forced headings like "One Platform, Complete Protection" onto two
+   lines at desktop sizes, costing ~46px of vertical space for no benefit. The
+   heading gets room to sit on one line; the description keeps a narrower
+   measure of its own so line length stays comfortable to read. */
+.section-header { text-align: center; max-width: 780px; margin: 0 auto var(--space-section-header); }
+.section-header .section-desc { max-width: 620px; margin-inline: auto; }
+/* The first section sits directly under the hero, which already introduced the
+   product — a full-height heading block here just delays the content again. */
+.features-section .section-header { margin-bottom: clamp(24px, 2.5vw, 32px); }
 .section-label { display: inline-block; font-size: 12px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
 .section-title-pub { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 16px; }
 .section-desc { font-size: 16px; color: var(--text-secondary); line-height: 1.7; }
 
 /* Hero */
-.hero-section { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 120px 0 60px; }
+/* Top padding clears the fixed navbar and then adds the same section rhythm
+   as everything below it, so the hero isn't visually deeper than its neighbours. */
+/* The hero used a full --space-section top AND bottom on top of clearing the
+   navbar, which pushed the first real content (the capability cards) to y=911
+   on a 960px screen — so the entire opening screen was a headline and a
+   subheading with nothing to actually look at. The hero keeps its breathing
+   room at the top and gives some back at the bottom, so content starts above
+   the fold. */
+.hero-section { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: calc(var(--pub-navbar-height) + var(--space-section)) 0 calc(var(--space-section) * 0.55); }
 .hero-bg-effects { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
 .hero-gradient { position: absolute; inset: 0; background: var(--bg-primary); }
 .hero-grid-pattern { position: absolute; inset: 0; opacity: 0.03; background-image: linear-gradient(var(--border-subtle) 1px, transparent 1px), linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px); background-size: 80px 80px; }
 .hero-glow { display: none; }
 .hero-glow-1 { display: none; }
 .hero-glow-2 { display: none; }
-.hero-content { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; position: relative; z-index: 10; }
+/* Copy column gets the larger share: the headline needs room to break where
+   it's written to, and a 50/50 split left it wrapping awkwardly. */
+.hero-content { display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(32px, 5vw, 72px); align-items: center; position: relative; z-index: 10; }
 .hero-text { display: flex; flex-direction: column; gap: 20px; }
-.hero-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--accent-muted); border: 1px solid rgba(59,130,246,0.15); border-radius: var(--radius-md); font-size: 12px; font-weight: 500; color: var(--accent); width: fit-content; }
-.hero-title { font-size: clamp(32px, 4vw, 48px); font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; }
+.hero-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: var(--accent-muted); border: 1px solid var(--accent-soft); border-radius: var(--radius-md); font-size: 12px; font-weight: 500; color: var(--accent); width: fit-content; }
+/* 48px was small for a hero at desktop widths — it read as a section heading
+   rather than the page's opening statement. */
+.hero-title { font-size: clamp(34px, 4.4vw, 60px); font-weight: 800; line-height: 1.06; letter-spacing: -0.035em; }
 .hero-gradient-text { color: var(--accent); -webkit-text-fill-color: var(--accent); }
-.hero-subtitle { font-size: 16px; color: var(--text-secondary); line-height: 1.7; max-width: 480px; }
+.hero-subtitle { font-size: 16.5px; color: var(--text-secondary); line-height: 1.7; max-width: 520px; }
 .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .hero-trust-text { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
 
 /* Hero Dashboard Preview */
-.hero-visual { display: flex; justify-content: center; }
+.hero-visual { display: flex; justify-content: center; perspective: 1200px; }
+
+/* ── Hero product console ─────────────────────────────────────────────
+   The hero used to be a centred headline with nothing beside it, so the
+   opening screen never showed what the product does. This is that visual.
+   Written light-theme-first; the older .hero-dashboard-preview block below
+   is dark-theme only and was never wired into any page. */
+.hero-console {
+  position: relative;
+  width: 100%; max-width: 460px;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-xl);
+  overflow: hidden;
+}
+
+.hero-console-bar {
+  display: flex; align-items: center; gap: 7px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.hc-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--border-strong); }
+.hero-console-title { margin-left: 8px; font-size: 12px; font-weight: 650; color: var(--text-secondary); }
+.hero-console-live {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--accent-green);
+}
+.hc-pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-green); animation: hcPulse 1.6s ease-in-out infinite; }
+@keyframes hcPulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+.hero-console-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+
+.hero-console-target { display: flex; flex-direction: column; gap: 5px; }
+.hc-target-label { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); }
+.hc-target-url {
+  font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);
+  background: var(--bg-tertiary); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 9px 11px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.hero-console-verdict {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px; border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--sev-critical) 8%, transparent);
+  border: 1px solid color-mix(in oklab, var(--sev-critical) 28%, transparent);
+}
+.hc-verdict-icon { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 9px; background: color-mix(in oklab, var(--sev-critical) 14%, transparent); color: var(--sev-critical); }
+.hc-verdict-text { min-width: 0; flex: 1; }
+.hc-verdict-text strong { display: block; font-size: 13.5px; font-weight: 750; color: var(--sev-critical); }
+.hc-verdict-text em { display: block; margin-top: 2px; font-size: 11.5px; font-style: normal; line-height: 1.45; color: var(--text-secondary); }
+.hc-score { text-align: right; flex-shrink: 0; }
+.hc-score b { display: block; font-family: var(--font-mono); font-size: 22px; font-weight: 800; line-height: 1; color: var(--sev-critical); font-variant-numeric: tabular-nums; }
+.hc-score i { display: block; margin-top: 2px; font-size: 9.5px; font-style: normal; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+
+.hero-console-signals { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.hero-console-signals li {
+  display: flex; align-items: center; gap: 9px;
+  padding: 9px 10px; border-radius: var(--radius-sm);
+  font-size: 12px; background: var(--bg-tertiary);
+}
+.hc-signal-icon { display: grid; place-items: center; color: var(--text-muted); flex-shrink: 0; }
+.hc-signal-label { color: var(--text-secondary); }
+.hc-signal-value { margin-left: auto; font-weight: 650; color: var(--text-primary); }
+
+.hero-console-foot {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; color: var(--text-muted);
+  border-top: 1px dashed var(--border-subtle); padding-top: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hc-pulse { animation: none; }
+}
 .hero-dashboard-preview {
   width: 100%; max-width: 480px;
   background: rgba(18, 20, 30, 0.6);
@@ -980,14 +1316,33 @@ img { max-width: 100%; height: auto; }
 .trusted-logo:hover { opacity: 0.8; }
 
 /* Features Grid */
-.features-section { padding: 40px 0 80px; }
-.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+/* Reduced top padding: this section butts straight onto the hero, which has
+   its own bottom padding, so a full section gap stacked two spacers together
+   and pushed the capability cards off the opening screen. */
+.features-section { padding: calc(var(--space-section) * 0.55) 0 var(--space-section); }
+/* 16px was tight for cards this size — they read as a single grey slab rather
+   than six distinct capabilities. */
+.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
 .feature-card {
   background: var(--bg-card-solid); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md); padding: 24px;
-  transition: border-color 0.2s;
+  transition: transform .25s var(--ease-out-expo), box-shadow .25s var(--ease-out-expo), border-color .25s;
 }
-.feature-card:hover { border-color: var(--border-card); }
+/* Was --border-subtle -> --border-card, which are the SAME value in the light
+   theme: a hover state that rendered no change at all. */
+.feature-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--elev-md);
+  transform: translateY(-3px);
+}
+.feature-card:hover .feature-icon { transform: scale(1.06); }
+.feature-icon { transition: transform .25s var(--ease-out-expo); }
+
+@media (prefers-reduced-motion: reduce) {
+  .feature-card, .feature-icon { transition: border-color .2s; }
+  .feature-card:hover { transform: none; }
+  .feature-card:hover .feature-icon { transform: none; }
+}
 .feature-icon { font-size: 20px; margin-bottom: 12px; }
 .feature-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
 .feature-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
@@ -1000,7 +1355,7 @@ img { max-width: 100%; height: auto; }
 .stat-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 
 /* How It Works */
-.how-section { padding: 100px 0; }
+.how-section { padding: var(--space-section) 0; }
 .how-steps { display: flex; align-items: flex-start; gap: 0; }
 .how-step { flex: 1; padding: 32px; text-align: center; }
 .how-number { font-family: var(--font-mono); font-size: 40px; font-weight: 900; color: var(--accent); opacity: 0.3; margin-bottom: 16px; }
@@ -1022,7 +1377,7 @@ img { max-width: 100%; height: auto; }
 
 /* CTA Section */
 .cta-section {
-  padding: 80px 0; position: relative; overflow: hidden;
+  padding: var(--space-section) 0; position: relative; overflow: hidden;
   background: var(--bg-secondary); border-top: 1px solid var(--border-subtle);
 }
 .cta-content { text-align: center; max-width: 540px; margin: 0 auto; }
@@ -1033,9 +1388,9 @@ img { max-width: 100%; height: auto; }
 /* ══════════════════════════════════════════════════════════════════════
    CONTENT PAGES (About, Blog, Pricing, etc.)
    ══════════════════════════════════════════════════════════════════════ */
-.page-section { padding: 80px 0; }
+.page-section { padding: var(--space-section) 0; }
 .page-section:nth-child(even) { background: var(--bg-secondary); }
-.page-hero { padding: 120px 0 60px; text-align: center; margin-top: var(--pub-navbar-height); }
+.page-hero { padding: var(--space-section) 0; text-align: center; margin-top: var(--pub-navbar-height); }
 .page-hero-title { font-size: clamp(32px, 5vw, 48px); font-weight: 800; letter-spacing: -0.02em; margin-bottom: 16px; }
 .page-hero-desc { font-size: 18px; color: var(--text-secondary); max-width: 600px; margin: 0 auto; line-height: 1.7; }
 
@@ -1337,7 +1692,10 @@ img { max-width: 100%; height: auto; }
   .hero-text { align-items: center; }
   .hero-subtitle { margin: 0 auto; }
   .hero-actions { justify-content: center; }
-  .hero-visual { display: none; }
+  .trust-badge-row { justify-content: center; }
+  /* Stacks under the copy instead of being hidden — it is the only thing on
+     the page that shows what the product does, so tablets should keep it. */
+  .hero-visual { justify-content: center; }
   .features-grid { grid-template-columns: repeat(2, 1fr); }
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .testimonials-grid { grid-template-columns: 1fr; }
@@ -1348,6 +1706,13 @@ img { max-width: 100%; height: auto; }
   .footer-newsletter-inner { flex-direction: column; text-align: center; }
   .pub-nav-desktop { display: none; }
   .pub-mobile-toggle { display: block; }
+
+  /* Log In and Get a Demo also live in the mobile drawer, so drop them from the
+     collapsed bar. Left in place they overflowed .pub-nav-actions — which is
+     flex-shrink: 0 — and pushed the hamburger clean off the right edge, making
+     navigation unreachable on a phone. */
+  .pub-nav-login,
+  .pub-nav-cta { display: none; }
 }
 
 @media (max-width: 768px) {
@@ -1383,8 +1748,19 @@ img { max-width: 100%; height: auto; }
 }
 
 /* ScrollReveal MD3 Animations */
-.scroll-hidden { opacity: 0; transform: translateY(40px); transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.scroll-visible { opacity: 1; transform: translateY(0); transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
+/* 16px, not the 40px this used to slide: a reveal should read as a fade with a
+   hint of travel. A large slide is slower to settle, fights the reader's eye
+   on the way down the page, and is a common motion-sickness trigger. */
+.scroll-hidden { opacity: 0; transform: translateY(16px); transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1), transform 0.55s cubic-bezier(0.16, 1, 0.3, 1); }
+.scroll-visible { opacity: 1; transform: translateY(0); transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1), transform 0.55s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* A large slide from invisible is precisely the motion that provokes vestibular
+   discomfort, and content must never depend on an animation to become
+   readable. Under reduce, both states are simply "visible". */
+@media (prefers-reduced-motion: reduce) {
+  .scroll-hidden,
+  .scroll-visible { opacity: 1; transform: none; transition: none; }
+}
 
 /* Floating Animations System */
 @keyframes floatY {
@@ -1456,5 +1832,33 @@ img { max-width: 100%; height: auto; }
 
 .floating-rotate {
   animation: floatRotate 6s ease-in-out infinite;
+}
+
+/* ── Indeterminate progress ────────────────────────────────────────────
+   For waits whose duration genuinely cannot be known — a request in flight
+   to a third-party API. Deliberately not a percentage: a number that does
+   not track real progress is worse than no number, because the reader
+   assumes it means something. */
+.indeterminate-track {
+  position: relative;
+}
+
+.indeterminate-bar {
+  width: 40%;
+  animation: indeterminateSlide 1.4s var(--ease-out-expo, ease-in-out) infinite;
+}
+
+@keyframes indeterminateSlide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+/* Reduced motion gets a static filled track rather than a sliding one. */
+@media (prefers-reduced-motion: reduce) {
+  .indeterminate-bar {
+    width: 100%;
+    animation: none;
+    opacity: 0.6;
+  }
 }
 

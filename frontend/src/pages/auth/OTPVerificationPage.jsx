@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import ParticleBackground from '../../components/ui/ParticleBackground';
+import { useNavigate } from 'react-router-dom';
+import AuthLayout from '../../components/ui/AuthLayout';
 
 export default function OTPVerificationPage() {
   const navigate = useNavigate();
@@ -66,15 +66,7 @@ export default function OTPVerificationPage() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-bg-effects">
-        <ParticleBackground />
-        <div className="auth-grid-lines" />
-        <div className="auth-glow-1" />
-        <div className="auth-glow-2" />
-      </div>
-
-      <div className="auth-container">
+    <AuthLayout>
         <div className="auth-card" style={{ textAlign: 'center' }}>
           <div className="auth-logo" style={{ justifyContent: 'center' }}>
             <div className="auth-logo-icon">🛡️</div>
@@ -129,7 +121,6 @@ export default function OTPVerificationPage() {
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }

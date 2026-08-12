@@ -1,30 +1,30 @@
 /* analyzer.css */
 
 .analyzer-page {
-  padding: 40px;
-  max-width: 1200px;
+  padding: 40px 32px;
+  max-width: 1360px;
   margin: 0 auto;
   color: var(--text-primary);
   font-family: var(--font-sans);
 }
 
 .analyzer-header {
-  margin-bottom: 40px;
+  margin-bottom: 32px;
 }
 
 .analyzer-header h1 {
-  font-size: 32px;
+  font-size: 38px;
   font-weight: 800;
   margin-bottom: 12px;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
 .analyzer-header p {
-  font-size: 16px;
+  font-size: 17px;
   color: var(--text-secondary);
-  line-height: 1.6;
-  max-width: 600px;
+  line-height: 1.65;
+  max-width: 680px;
 }
 
 .analyzer-content {

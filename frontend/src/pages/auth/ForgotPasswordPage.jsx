@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import ParticleBackground from '../../components/ui/ParticleBackground';
+import AuthLayout from '../../components/ui/AuthLayout';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -41,15 +41,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-bg-effects">
-        <ParticleBackground />
-        <div className="auth-grid-lines" />
-        <div className="auth-glow-1" />
-        <div className="auth-glow-2" />
-      </div>
-
-      <div className="auth-container">
+    <AuthLayout>
         <div className="auth-card">
           <div className="auth-logo">
             <div className="auth-logo-icon">🛡️</div>
@@ -114,8 +106,7 @@ export default function ForgotPasswordPage() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }
 

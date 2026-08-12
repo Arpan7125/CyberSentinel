@@ -26,20 +26,37 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], permission_classes=[IsAdmin])
     def broadcast(self, request):
-        title = request.data.get('title')
-        message = request.data.get('message')
-        notif_type = request.data.get('type', 'General')
+        title = (request.data.get('title') or '').strip()
+        message = (request.data.get('message') or '').strip()
+        notif_type = (request.data.get('type') or 'General').strip()
 
         if not title or not message:
             return Response({'error': 'Title and message are required'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # `choices` is not enforced on save, only on full_clean, so an unchecked
+        # value here would be written straight to the column and then render as
+        # an unrecognised category everywhere it is displayed.
+        valid_types = {value for value, _ in Notification.TYPE_CHOICES}
+        if notif_type not in valid_types:
+            return Response(
+                {'error': f"Invalid type. Choose one of: {', '.join(sorted(valid_types))}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         from django.contrib.auth.models import User
-        users = User.objects.all()
-        
+
         notifications = [
             Notification(user=u, title=title, message=message, notification_type=notif_type)
-            for u in users
+            for u in User.objects.only('id').iterator()
         ]
-        Notification.objects.bulk_create(notifications)
-        
-        return Response({'status': f'Broadcast sent to {len(notifications)} users'}, status=status.HTTP_201_CREATED)
+
+        if not notifications:
+            return Response({'status': 'No registered accounts to notify.'}, status=status.HTTP_200_OK)
+
+        Notification.objects.bulk_create(notifications, batch_size=500)
+
+        count = len(notifications)
+        return Response(
+            {'status': f'Broadcast delivered to {count} account{"s" if count != 1 else ""}.'},
+            status=status.HTTP_201_CREATED,
+        )

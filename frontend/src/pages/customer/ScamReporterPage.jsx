@@ -196,7 +196,7 @@ export default function ScamReporterPage() {
       {/* ── Stats row ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 28 }}>
         {[
-          { icon: Database,    label: 'Total Reports',   value: totalCount,                       color: '#6366f1' },
+          { icon: Database,    label: 'Total Reports',   value: totalCount,                       color: 'var(--accent)' },
           { icon: TrendingUp,  label: 'This Session',    value: newIds.size > 0 ? newIds.size : 0, color: '#FF9F0A' },
           { icon: Shield,      label: 'Threat Types',    value: Object.keys(typeBreakdown).length, color: '#34C759' },
           { icon: Users,       label: 'Community Watch', value: `${Math.max(1, Math.floor(totalCount * 1.4))}`,  color: '#AF52DE' },

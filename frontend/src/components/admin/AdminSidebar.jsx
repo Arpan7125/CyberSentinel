@@ -39,6 +39,12 @@ export default function AdminSidebar({ collapsed, setCollapsed }) {
           <button className={`admin-ws-link ${activeModule === 'subscriptions' ? 'active' : ''}`} onClick={() => setActiveModule('subscriptions')}>
             <span><FileText size={16} /></span> <span>Subscriptions</span>
           </button>
+          {/* FinanceDashboard existed but had no way to reach it: nothing in this
+              sidebar ever set the 'finance' module, so the revenue view was
+              unreachable dead code. */}
+          <button className={`admin-ws-link ${activeModule === 'finance' ? 'active' : ''}`} onClick={() => setActiveModule('finance')}>
+            <span><CardIcon size={16} /></span> <span>Finance</span>
+          </button>
 
         </div>
 

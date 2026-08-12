@@ -70,7 +70,7 @@ export default function CustomerLayout() {
 
   // Apply saved theme on mount (light by default)
   useEffect(() => {
-    const savedTheme = localStorage.getItem('cs_theme') || 'dark';
+    const savedTheme = localStorage.getItem('cs_theme') || 'light';
     document.body.className = '';
     document.body.classList.add(`theme-${savedTheme}`);
   }, []);

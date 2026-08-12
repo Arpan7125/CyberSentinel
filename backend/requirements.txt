@@ -1,17 +1,48 @@
+# ── Core framework ──────────────────────────────────────────────────────────
 Django>=4.2,<6.0
 djangorestframework>=3.14.0
 django-cors-headers>=4.0.0
-scikit-learn>=1.2.0
-numpy>=1.24.0
-Pillow>=9.5.0
-requests>=2.31.0
 python-dotenv>=1.0.0
-gunicorn>=21.2.0
-phonenumbers>=8.13.0
+
+# ── Real-time (WebSockets) ──────────────────────────────────────────────────
 channels>=4.1.0
 channels-redis>=4.2.0
 daphne>=4.1.0
-easyocr>=1.7.1
+
+# ── Production serving ──────────────────────────────────────────────────────
+# Daphne (above) is the production server: it speaks ASGI, so the REST API and
+# the Channels WebSockets share one process. A WSGI server such as gunicorn
+# would serve the API but silently drop every WebSocket connection.
+whitenoise>=6.6.0             # Static file serving without a separate web server
+# Verifies outbound TLS with the OS trust store. Needed because some upstreams
+# (cisa.gov) serve an incomplete cert chain that OpenSSL cannot complete on its
+# own — see the TLS trust note in settings.py. Requires Python >= 3.10.
+truststore>=0.9.0
+dj-database-url>=2.1.0        # Parses Render/Heroku-style DATABASE_URL
+psycopg[binary]>=3.1.0        # PostgreSQL driver
+redis>=5.0.0                  # Used directly by the readiness probe
+
+# ── Machine learning / analysis ─────────────────────────────────────────────
+scikit-learn>=1.2.0
+numpy>=1.24.0
+scipy>=1.10.0
+joblib>=1.3.0                 # Model persistence between worker boots
+Pillow>=9.5.0
+phonenumbers>=8.13.0
+requests>=2.31.0
+
+# NOTE: EasyOCR (screenshot text extraction) is deliberately NOT listed here.
+# It depends on PyTorch, which is roughly 2 GB installed and exceeds the build
+# limits of most starter-tier hosts. The screenshot scanner already degrades
+# honestly when it is absent — it reports "OCR unavailable" rather than
+# inventing extracted text. To enable it:
+#     pip install -r requirements-ocr.txt
+
+# ── Google OAuth / Gmail ────────────────────────────────────────────────────
 google-api-python-client>=2.100.0
 google-auth>=2.23.0
 google-auth-oauthlib>=1.1.0
+
+# ── Microsoft OAuth (real sign-in) ──────────────────────────────────────────
+# Verifies Microsoft Entra ID JWTs against Microsoft's published signing keys.
+PyJWT[crypto]>=2.8.0

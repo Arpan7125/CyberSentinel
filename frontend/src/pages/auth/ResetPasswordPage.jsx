@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import ParticleBackground from '../../components/ui/ParticleBackground';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import AuthLayout from '../../components/ui/AuthLayout';
 import PasswordStrength from '../../components/ui/PasswordStrength';
 
 export default function ResetPasswordPage() {
@@ -54,15 +54,7 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="auth-page">
-      <div className="auth-bg-effects">
-        <ParticleBackground />
-        <div className="auth-grid-lines" />
-        <div className="auth-glow-1" />
-        <div className="auth-glow-2" />
-      </div>
-
-      <div className="auth-container">
+    <AuthLayout>
         <div className="auth-card">
           <div className="auth-logo">
             <div className="auth-logo-icon">🛡️</div>
@@ -148,8 +140,7 @@ export default function ResetPasswordPage() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }
 

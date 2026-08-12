@@ -400,9 +400,16 @@ export default function ThreatMap() {
             paddingRight: 4
           }} className="custom-scrollbar">
             {filteredLogs.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: 8 }}>
-                <ShieldAlert size={20} opacity={0.4} />
-                <span>Monitoring grid...</span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: 10, textAlign: 'center', padding: '0 12px' }}>
+                <ShieldAlert size={22} opacity={0.45} />
+                <span style={{ fontWeight: 600 }}>
+                  {filterSeverity === 'ALL' ? 'Monitoring grid' : `No ${filterSeverity.toLowerCase()} events`}
+                </span>
+                <span style={{ fontSize: 9.5, lineHeight: 1.6, opacity: 0.85, fontFamily: 'var(--font-sans)' }}>
+                  {filterSeverity === 'ALL'
+                    ? 'Scan events from across the platform appear here the moment they happen.'
+                    : 'Nothing at this severity yet — switch to ALL to see every event.'}
+                </span>
               </div>
             ) : (
               filteredLogs.map((log) => (

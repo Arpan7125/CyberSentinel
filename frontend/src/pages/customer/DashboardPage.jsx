@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
-import { dashboardService, integrationsService } from '../../services/api';
+import { dashboardService, integrationsService, insightsService } from '../../services/api';
 import { useSocket } from '../../hooks/useSocket';
+import { useApiData } from '../../hooks/useApiData';
 import TimelineComponent from '../../components/ui/Timeline';
 import ThreatMap from '../../components/ui/ThreatMap';
 import WelcomeGuide from '../../components/ui/WelcomeGuide';
 import GuidedTour from '../../components/ui/GuidedTour';
-import { Shield, ShieldAlert, Activity, Mail, Lock, Flag, Settings, ExternalLink, Bot, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { TrendChart, forecastCaption } from '../../components/charts';
+import { Shield, ShieldAlert, Activity, Mail, Lock, Settings, Bot, CheckCircle2, AlertTriangle, Info, TrendingUp } from 'lucide-react';
+
+/** Priority → colour token and icon for the recommendation list. */
+const PRIORITY_STYLES = {
+  critical: { color: 'var(--sev-critical)', icon: <ShieldAlert size={18} /> },
+  high: { color: 'var(--sev-high)', icon: <AlertTriangle size={18} /> },
+  medium: { color: 'var(--sev-medium)', icon: <Info size={18} /> },
+  low: { color: 'var(--sev-low)', icon: <Info size={18} /> },
+  info: { color: 'var(--accent)', icon: <CheckCircle2 size={18} /> },
+};
 
 export default function DashboardPage() {
   const { user, token } = useAuth();
@@ -24,6 +35,15 @@ export default function DashboardPage() {
     enabled: !!token,
     onMessage: (liveStats) => setStats(liveStats),
   });
+
+  // Recommendations, forecasts, and the threat probability are all derived from
+  // this user's own scan history server-side.
+  const {
+    data: insights,
+    loading: insightsLoading,
+    error: insightsError,
+    refetch: refetchInsights,
+  } = useApiData(() => insightsService.insights(30), []);
 
   const TOUR_STEPS = [
     { targetId: 'tour-health-score', title: 'Posture Score', content: 'This score gives you a quick overview of your overall security health across all connected accounts.' },
@@ -59,11 +79,16 @@ export default function DashboardPage() {
   let riskColor = 'var(--accent-green)';
   if (avgRisk > 75) { riskLevel = 'Critical'; riskColor = 'var(--accent-red)'; }
   else if (avgRisk > 50) { riskLevel = 'High'; riskColor = 'var(--accent-orange)'; }
-  else if (avgRisk > 25) { riskLevel = 'Medium'; riskColor = '#FF9500'; }
+  else if (avgRisk > 25) { riskLevel = 'Medium'; riskColor = 'var(--accent-yellow)'; }
   
-  const aiRecommendations = [
-    { title: 'Review Suspicious Links', desc: `Our AI flagged ${stats?.total_threats || 0} threats recently.`, icon: <ShieldAlert size={18} />, action: '/dashboard/url-scanner', urgent: (stats?.total_threats || 0) > 0 },
-  ];
+  const recommendations = insights?.recommendations || [];
+  const probability = insights?.threat_probability;
+  const trajectory = insights?.risk_trajectory;
+
+  // The insights endpoint returns a scan forecast but no history array, so the
+  // dashboard charts the projection alone. The full history+forecast view lives
+  // on the Reports page.
+  const scanForecast = insights?.forecast;
 
   const timelineItems = (stats?.recent_scans || []).map((scan) => ({
     title: `${scan.scan_type} scan — ${scan.risk_level} risk`,
@@ -166,14 +191,22 @@ export default function DashboardPage() {
             </div>
           </div>
           
+          {/* Replaces a tile that always read "0": a forward-looking figure the
+              backend computes from this account's observed threat arrival rate. */}
           <div className="glass-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Community Reports</span>
-              <Flag size={18} color="var(--text-muted)" />
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Threat Likelihood</span>
+              <TrendingUp size={18} color="var(--text-muted)" />
             </div>
             <div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', marginTop: 12 }}>{loading ? '--' : '0'}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Active contributions</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', marginTop: 12 }}>
+                {insightsLoading ? '--' : probability?.available ? `${probability.probability}%` : 'N/A'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                {probability?.available
+                  ? `${probability.band} in the next ${probability.horizon_days} days`
+                  : 'Needs more scan history'}
+              </div>
             </div>
           </div>
         </div>
@@ -186,21 +219,58 @@ export default function DashboardPage() {
         <div id="tour-ai-recs" className="glass-card" style={{ padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
             <Bot size={20} color="var(--accent)" />
-            <h3 style={{ fontSize: 15, fontWeight: 700 }}>AI Recommendations</h3>
+            <h3 style={{ fontSize: 15, fontWeight: 700 }}>Security Recommendations</h3>
           </div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {aiRecommendations.map((rec, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 16, background: 'var(--bg-secondary)', borderRadius: 8, border: `1px solid ${rec.urgent ? 'rgba(239,68,68,0.2)' : 'var(--border-subtle)'}` }}>
-                <div style={{ color: rec.urgent ? 'var(--accent-red)' : 'var(--accent)' }}>{rec.icon}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{rec.title}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{rec.desc}</div>
-                </div>
-                <button className="btn-pub btn-pub-ghost btn-pub-sm" onClick={() => navigate(rec.action)}>Review</button>
-              </div>
-            ))}
-          </div>
+
+          {insightsLoading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {[0, 1].map((i) => (
+                <div key={i} className="animate-pulse" style={{ height: 76, borderRadius: 8, background: 'var(--bg-tertiary)' }} />
+              ))}
+            </div>
+          )}
+
+          {!insightsLoading && insightsError && (
+            <div style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-subtle)' }} role="alert">
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                {insightsError.message || 'Could not load your recommendations.'}
+              </p>
+              <button className="btn-pub btn-pub-ghost btn-pub-sm" style={{ marginTop: 12 }} onClick={refetchInsights}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* Each item names the observation that triggered it, so the advice is
+              traceable to this account's own history rather than generic. */}
+          {!insightsLoading && !insightsError && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {recommendations.map((rec, idx) => {
+                const style = PRIORITY_STYLES[rec.priority] || PRIORITY_STYLES.info;
+                return (
+                  <div key={`${rec.title}-${idx}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: 16, background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-subtle)', borderLeft: `3px solid ${style.color}` }}>
+                    <div style={{ color: style.color, marginTop: 2 }} aria-hidden="true">{style.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{rec.title}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{rec.detail}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>Based on: {rec.basis}</div>
+                    </div>
+                    {rec.action && (
+                      <button className="btn-pub btn-pub-ghost btn-pub-sm" style={{ flexShrink: 0 }} onClick={() => navigate(rec.action)}>
+                        Open
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {trajectory?.available && (
+            <p style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 16 }}>
+              Exposure score {trajectory.exposure_score} and {trajectory.direction} — {trajectory.method.toLowerCase()}, {trajectory.sample_size} scans.
+            </p>
+          )}
         </div>
 
         {/* Threat Map */}
@@ -248,6 +318,29 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Forward projection of this account's own scan volume */}
+      {scanForecast?.available && (
+        <div className="md-fade-up md-delay-100">
+          <TrendChart
+            title="Your projected scan activity"
+            subtitle={`Next ${scanForecast.horizon_days} days, extrapolated from ${scanForecast.basis_days} days of your history.`}
+            labels={scanForecast.points.map((p) => p.date)}
+            series={[{
+              key: 'projected',
+              label: 'Projected scans/day',
+              values: scanForecast.points.map((p) => p.predicted),
+              color: 'var(--chart-series-1)',
+            }]}
+            band={{
+              lower: scanForecast.points.map((p) => p.lower),
+              upper: scanForecast.points.map((p) => p.upper),
+            }}
+            footnote={forecastCaption(scanForecast)}
+            height={220}
+          />
+        </div>
+      )}
 
       {/* Bottom Section: Activity Timeline */}
       <div className="glass-card md-fade-up md-delay-200" style={{ padding: 24 }}>

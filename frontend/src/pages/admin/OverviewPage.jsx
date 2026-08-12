@@ -6,6 +6,14 @@ import GuidedTour from '../../components/ui/GuidedTour';
 import { useAuth } from '../../AuthContext';
 import { Users, Zap, ShieldAlert, Ticket, Radio } from 'lucide-react';
 
+const SCAN_TYPE_LABELS = {
+  TEXT: 'Text messages',
+  URL: 'Links',
+  FILE: 'Files',
+  SCREENSHOT: 'Screenshots',
+  PHONE: 'Phone numbers',
+};
+
 export default function OverviewPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
@@ -55,6 +63,10 @@ export default function OverviewPage() {
     { label: 'Real-Time Engine', value: feedLive ? 'Connected' : 'Reconnecting…', color: feedLive ? 'var(--accent-green)' : 'var(--accent-orange)' }
   ];
 
+  const scanTypeRows = Object.entries(stats?.scan_type_distribution || {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort((a, b) => b[1] - a[1]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {showTour && (
@@ -68,8 +80,11 @@ export default function OverviewPage() {
       )}
       {/* Header title */}
       <div className="md-fade-up">
-        <h1 className="page-title" style={{ color: '#AF52DE' }}>Security Operations Center (SOC)</h1>
-        <p className="page-subtitle">REAL-TIME SIEM OVERVIEW // SYSTEM LOG NODES: CONNECTED</p>
+        <h1 className="page-title" style={{ color: 'var(--accent-violet)' }}>Security Operations Center</h1>
+        {/* Reports the actual socket state rather than asserting "CONNECTED" unconditionally. */}
+        <p className="page-subtitle">
+          Live scan activity across the platform · feed {feedLive ? 'connected' : 'reconnecting…'}
+        </p>
       </div>
 
       {/* KPI Stats widgets */}
@@ -163,11 +178,18 @@ export default function OverviewPage() {
             <Radio size={16} className={feedLive ? 'pulse-icon' : ''} color={feedLive ? 'var(--accent-green)' : 'var(--text-muted)'} />
             Scan Type Distribution
           </h3>
+          {/* Driven by whatever scan types the backend reports, so File and Phone
+              scans are no longer silently dropped from this panel. */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {['TEXT', 'URL', 'SCREENSHOT'].map((type) => (
+            {scanTypeRows.length === 0 && (
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', padding: '16px 0', textAlign: 'center' }}>
+                {loading ? 'Loading…' : 'No scans recorded yet.'}
+              </div>
+            )}
+            {scanTypeRows.map(([type, count]) => (
               <div key={type} style={{ background: 'var(--bg-secondary)', padding: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{type}</span>
-                <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{stats?.scan_type_distribution?.[type] ?? 0}</span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{SCAN_TYPE_LABELS[type] || type}</span>
+                <span style={{ fontSize: 13, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{count}</span>
               </div>
             ))}
           </div>

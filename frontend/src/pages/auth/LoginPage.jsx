@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../AuthContext';
-import { Shield, Lock, Activity, User, KeyRound, Smartphone, Mail, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { User } from 'lucide-react';
+import AuthLayout from '../../components/ui/AuthLayout';
 import GoogleSignInButton from '../../components/ui/GoogleSignInButton';
+import MicrosoftSignInButton from '../../components/ui/MicrosoftSignInButton';
 
 export default function LoginPage() {
-  const { login, requestOTP, loginWithOTP, googleLogin } = useAuth();
+  const { login, register, requestOTP, loginWithOTP, googleLogin, microsoftLogin } = useAuth();
   const navigate = useNavigate();
   
   const [loginMode, setLoginMode] = useState('password'); // 'password' | 'otp'
@@ -29,17 +31,37 @@ export default function LoginPage() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!form.email || !form.password) { setError('Please fill in all fields.'); return; }
+    const cleanEmail = form.email.trim();
+    if (!cleanEmail || !form.password) { setError('Please fill in all fields.'); return; }
     setLoading(true);
     setError('');
     try {
-      const result = await login(form.email, form.password);
-      if (remember) localStorage.setItem('cs_remember', form.email);
+      const result = await login(cleanEmail, form.password);
+      if (remember) localStorage.setItem('cs_remember', cleanEmail);
       const role = result?.user?.role || 'customer';
       if (role === 'admin' || result?.user?.is_admin || result?.user?.is_superuser) navigate('/admin');
       else navigate('/dashboard');
     } catch (err) {
-      setError(err.message || 'Invalid username/email or password.');
+      setError(err.message || 'Invalid username/email or password. If you don\'t have an account, please sign up below.');
+      setLoading(false);
+    }
+  };
+
+  const handleDemoLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      try {
+        const result = await login('demo_user', 'demopass123');
+        navigate('/dashboard');
+        return;
+      } catch (err) {
+        await register('demo_user', 'demo@cybersentinel.io', 'demopass123', 'demopass123', 'customer');
+        navigate('/dashboard');
+      }
+    } catch (err) {
+      setError('Could not initiate demo session. Please click Sign up below to create a new account.');
+    } finally {
       setLoading(false);
     }
   };
@@ -106,61 +128,23 @@ export default function LoginPage() {
     }
   };
 
+  const handleMicrosoftCredential = async (credential) => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await microsoftLogin(credential);
+      const role = result?.user?.role || 'customer';
+      if (role === 'admin' || result?.user?.is_admin) navigate('/admin');
+      else navigate('/dashboard');
+    } catch (err) {
+      setError(err.message || 'Microsoft authentication failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>
-      
-      {/* Left side: Premium Branding */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 64, borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '-10%', right: '-10%', width: '50%', height: '50%', background: 'var(--accent-muted)', filter: 'blur(100px)', opacity: 0.5 }}></div>
-        <div style={{ position: 'absolute', bottom: '-10%', left: '-10%', width: '50%', height: '50%', background: 'var(--accent-muted)', filter: 'blur(100px)', opacity: 0.5 }}></div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 'auto', zIndex: 10 }}>
-          <img src="/logo.png" alt="CyberSentinel" style={{ width: 40, height: 40, objectFit: 'contain' }} />
-          <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>CyberSentinel</span>
-        </div>
-
-        <div style={{ zIndex: 10, maxWidth: 500 }}>
-          <h1 style={{ fontSize: 48, fontWeight: 900, lineHeight: 1.1, marginBottom: 24, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>
-            Your Digital Life, Secured.
-          </h1>
-          <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 40 }}>
-            Access your Personal Security Hub. Monitor connected accounts, check email breaches, analyze suspicious messages, and manage your cyber posture from a single interface.
-          </p>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-              <div style={{ background: 'rgba(59,130,246,0.1)', padding: 10, borderRadius: 10, color: 'var(--accent)' }}>
-                <Shield size={20} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Real-time Threat Monitoring</h3>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>Active scanning of URLs, emails, and SMS against our global threat database.</p>
-              </div>
-            </div>
-            
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-              <div style={{ background: 'rgba(139,92,246,0.1)', padding: 10, borderRadius: 10, color: 'var(--accent-purple)' }}>
-                <Activity size={20} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Identity Protection</h3>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>Monitor data breaches and secure your connected OAuth accounts instantly.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Right side: Login Form */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 64, position: 'relative' }}>
-        
-        {/* Top Right Actions */}
-        <div style={{ position: 'absolute', top: 32, right: 32, display: 'flex', gap: 16 }}>
-          <Link to="/" style={{ color: 'var(--text-muted)', fontSize: 14, textDecoration: 'none', fontWeight: 600 }}>&larr; Return to Home</Link>
-          <Link to="/admin-login" style={{ color: 'var(--accent)', fontSize: 14, textDecoration: 'none', fontWeight: 600 }}>Admin Login</Link>
-        </div>
-
-        <div style={{ width: '100%', maxWidth: 400 }}>
+    <AuthLayout actions={<Link to="/admin-login">Admin Login</Link>}>
           
           <div style={{ animation: 'fadeIn 0.3s' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -191,7 +175,11 @@ export default function LoginPage() {
               </button>
             </div>
 
-            {error && <div style={{ padding: 12, background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{error}</div>}
+            {error && (
+              <div style={{ padding: 14, background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, fontSize: 13.5, fontWeight: 600, marginBottom: 16, lineHeight: 1.5 }}>
+                {error}
+              </div>
+            )}
             {successMsg && <div style={{ padding: 12, background: 'rgba(50,215,75,0.1)', color: '#32D74B', border: '1px solid rgba(50,215,75,0.2)', borderRadius: 6, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{successMsg}</div>}
             {devOtpHint && <div style={{ padding: 10, background: 'rgba(175,82,222,0.1)', color: '#AF52DE', border: '1px solid rgba(175,82,222,0.2)', borderRadius: 6, fontSize: 12, fontWeight: 700, marginBottom: 16, textAlign: 'center' }}>{devOtpHint}</div>}
 
@@ -241,7 +229,7 @@ export default function LoginPage() {
                 <button 
                   type="submit" 
                   disabled={loading}
-                  style={{ width: '100%', padding: 14, background: 'var(--accent)', color: 'var(--text-inverse)', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 8, transition: 'opacity 0.2s' }}
+                  style={{ width: '100%', padding: 14, background: 'var(--accent)', color: 'var(--text-inverse)', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer', marginTop: 4, transition: 'opacity 0.2s' }}
                 >
                   {loading ? 'Authenticating...' : 'Sign In'}
                 </button>
@@ -307,25 +295,36 @@ export default function LoginPage() {
                 )}
               </div>
             )}
+
+            {/* Quick Demo Access Button */}
+            <div style={{ marginTop: 16 }}>
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                disabled={loading}
+                style={{ width: '100%', padding: '12px 0', background: 'var(--bg-secondary)', color: 'var(--accent)', border: '1px solid var(--border-subtle)', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
+              >
+                ⚡ Explore Demo Dashboard (Instant Login)
+              </button>
+            </div>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '32px 0 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '24px 0 16px' }}>
               <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
               <span style={{ fontSize: 12, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>Or continue with</span>
               <div style={{ flex: 1, height: 1, background: 'var(--border-subtle)' }} />
             </div>
             
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
               <GoogleSignInButton onCredential={handleGoogleCredential} onError={setError} />
+              <MicrosoftSignInButton onCredential={handleMicrosoftCredential} onError={setError} />
             </div>
 
-            <div style={{ textAlign: 'center', marginTop: 32, fontSize: 14, color: 'var(--text-secondary)' }}>
-              Don't have an account? <Link to="/register" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>Sign up</Link>
+            <div style={{ textAlign: 'center', marginTop: 28, fontSize: 14, color: 'var(--text-secondary)' }}>
+              Don't have an account? <Link to="/register" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>Sign up for free</Link>
             </div>
           </div>
 
-        </div>
-      </div>
-    </div>
+    </AuthLayout>
   );
 }
 
