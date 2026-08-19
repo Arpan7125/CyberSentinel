@@ -26,13 +26,28 @@ def extract_text_from_image(image_path_or_file):
     try:
         if _EASYOCR_READER is None:
             logger.info("Initializing EasyOCR reader...")
-            _EASYOCR_READER = easyocr.Reader(['en'], gpu=False)
+            _EASYOCR_READER = easyocr.Reader(['en'], gpu=False, verbose=False)
 
-        results = _EASYOCR_READER.readtext(image_path_or_file, detail=0)
-        extracted_text = " ".join(results).strip()
+        if isinstance(image_path_or_file, str):
+            image_input = image_path_or_file
+        elif hasattr(image_path_or_file, 'read'):
+            image_path_or_file.seek(0)
+            image_input = image_path_or_file.read()
+            image_path_or_file.seek(0)
+        elif isinstance(image_path_or_file, bytes):
+            image_input = image_path_or_file
+        else:
+            import numpy as np
+            image_input = np.array(Image.open(image_path_or_file))
+
+        results = _EASYOCR_READER.readtext(image_input, detail=0)
+        raw_text = " ".join([str(r) for r in results]).strip()
+        # Clean unicode characters safely so string operations on Windows never fail with charmap codec error
+        extracted_text = raw_text.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')
         if extracted_text:
             return extracted_text, "EasyOCR Engine (Local)"
         return "", "No readable text found in this image"
     except Exception as e:
-        logger.error(f"EasyOCR extraction failed: {str(e)}")
-        return "", f"OCR failed: {str(e)}"
+        err_msg = str(e).encode('utf-8', errors='ignore').decode('utf-8', errors='ignore')
+        logger.error(f"EasyOCR extraction failed: {err_msg}")
+        return "", f"OCR failed: {err_msg}"
