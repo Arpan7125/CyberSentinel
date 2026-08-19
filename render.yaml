@@ -66,6 +66,10 @@ services:
       # ── Secrets: set these in the Render dashboard ───────────────────────
       - key: VIRUSTOTAL_API_KEY
         sync: false
+      # Free key at https://ocr.space/ocrapi enables the Screenshot Analyzer's
+      # OCR without EasyOCR's ~2GB footprint (which won't fit the free tier).
+      - key: OCR_SPACE_API_KEY
+        sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET

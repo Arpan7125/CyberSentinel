@@ -64,6 +64,15 @@ class ReadinessView(APIView):
 
         # Reported, never failed on — these are optional capabilities.
         checks['virustotal'] = 'configured' if settings.VIRUSTOTAL_API_KEY else 'not configured'
+        import os as _os
+        if _os.getenv('OCR_SPACE_API_KEY', '').strip():
+            checks['ocr'] = 'cloud (OCR.space)'
+        else:
+            try:
+                import easyocr  # noqa: F401
+                checks['ocr'] = 'local (EasyOCR)'
+            except ImportError:
+                checks['ocr'] = 'not configured'
         checks['google_oauth'] = 'configured' if settings.GOOGLE_CLIENT_ID else 'not configured'
         checks['email'] = (
             'smtp' if settings.EMAIL_BACKEND.endswith('smtp.EmailBackend') else 'console only'
