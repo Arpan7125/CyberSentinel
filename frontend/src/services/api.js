@@ -168,7 +168,7 @@ export const integrationsService = {
   getSyncLogs: (account_id) => api.get(`/integrations/connected/${account_id}/logs/`),
   getConfig: () => api.get('/integrations/config/'),
   saveConfig: (data) => api.post('/integrations/config/', data),
-  importGmail: () => api.post('/integrations/gmail/import/', {}),
+  importGmail: () => api.post('/integrations/gmail/import/', { access_token: localStorage.getItem('connected_gmail_token') || '' }),
 };
 
 export const securityService = {

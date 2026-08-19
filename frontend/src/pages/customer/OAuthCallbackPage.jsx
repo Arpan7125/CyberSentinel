@@ -34,25 +34,31 @@ export default function OAuthCallbackPage() {
         setCurrentStep(1);
         
         // Exchange code for token
-        await integrationsService.oauthCallback(providerId, code);
+        const res = await integrationsService.oauthCallback(providerId, code);
+        if (res && res.email) {
+          localStorage.setItem('connected_gmail_email', res.email);
+        }
+        if (res && res.access_token) {
+          localStorage.setItem('connected_gmail_token', res.access_token);
+        }
         
         // Step 1: Connect
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 800));
         setCurrentStep(2);
         
         // Step 2: Download
-        await new Promise(r => setTimeout(r, 1200));
+        await new Promise(r => setTimeout(r, 800));
         setCurrentStep(3);
         
         // Step 3: Scan
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 800));
         setCurrentStep(4);
         
         // Step 4: Complete
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 400));
         
-        // Redirect back to integrations page
-        navigate('/dashboard/integrations', { replace: true });
+        // Redirect directly to email protection inbox
+        navigate('/dashboard/email-scanner', { replace: true });
         
       } catch (err) {
         setError(err.data?.error || err.message || 'Failed to authorize account.');
@@ -64,16 +70,34 @@ export default function OAuthCallbackPage() {
 
   if (error) {
     return (
-      <div className="dash-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <div className="dash-card" style={{ maxWidth: 400, textAlign: 'center' }}>
-          <div style={{ color: '#FF3B30', marginBottom: 16 }}>
-            <Shield size={48} />
+      <div className="dash-page" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', padding: 20 }}>
+        <div className="dash-card" style={{ maxWidth: 460, textAlign: 'center', padding: '36px 28px', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 16, boxShadow: 'var(--shadow-md)' }}>
+          <div style={{ color: '#FF3B30', marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
+            <Shield size={52} />
           </div>
-          <h2 style={{ marginBottom: 12 }}>Connection Failed</h2>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>{error}</p>
-          <button className="dash-btn dash-btn-primary" onClick={() => navigate('/dashboard/integrations')}>
-            Return to Integrations
-          </button>
+          <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 10, color: 'var(--text-primary)' }}>Google OAuth Restricted</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14.5, lineHeight: 1.6, marginBottom: 18 }}>
+            {error}
+          </p>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '12px 16px', borderRadius: 10, marginBottom: 24, textAlign: 'left', lineHeight: 1.5, border: '1px solid var(--border-subtle)' }}>
+            💡 <strong>Why this happens:</strong> Google OAuth requires a verified production App Secret in Google Cloud Console. You can connect your Mail ID directly without Google OAuth using our Instant Protection service below.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <button
+              className="btn-pub"
+              style={{ padding: '13px 22px', fontSize: 14.5, fontWeight: 700, borderRadius: 10, background: 'var(--accent)', color: '#ffffff', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              onClick={() => navigate('/dashboard/email-scanner')}
+            >
+              ⚡ Connect Mail ID Directly & Open Inbox
+            </button>
+            <button
+              className="btn-pub btn-pub-secondary"
+              style={{ padding: '11px 18px', fontSize: 13.5, fontWeight: 600, borderRadius: 8, background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+              onClick={() => navigate('/dashboard/integrations')}
+            >
+              Return to Integrations Marketplace
+            </button>
+          </div>
         </div>
       </div>
     );

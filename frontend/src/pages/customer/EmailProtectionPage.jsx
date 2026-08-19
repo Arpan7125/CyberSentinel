@@ -112,9 +112,11 @@ export default function EmailProtectionPage() {
   const [connectError, setConnectError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const fetchEmails = async (targetEmail = connectedUserEmail) => {
+  const [isEditingMail, setIsEditingMail] = useState(false);
+
+  const fetchEmails = async (overrideEmail) => {
     setLoading(true);
-    const activeEmail = targetEmail || 'user@gmail.com';
+    const activeEmail = overrideEmail || connectedUserEmail || userEmailInput.trim() || 'user@gmail.com';
     try {
       const res = await integrationsService.importGmail();
       const backendEmails = res.emails || [];
@@ -170,13 +172,23 @@ export default function EmailProtectionPage() {
 
   useEffect(() => {
     const checkConnections = async () => {
+      const savedEmail = localStorage.getItem('connected_gmail_email');
+      if (savedEmail) {
+        setIsConnected(true);
+        setConnectedUserEmail(savedEmail);
+        setUserEmailInput(savedEmail);
+        fetchEmails(savedEmail);
+        return;
+      }
       try {
         const connected = await integrationsService.getConnectedAccounts();
         const emailAcc = connected?.find((acc) => acc.category === 'Email' && acc.status === 'connected');
         if (emailAcc) {
+          const accMail = emailAcc.email || 'user@gmail.com';
           setIsConnected(true);
-          setConnectedUserEmail(emailAcc.email || 'user@gmail.com');
-          fetchEmails();
+          setConnectedUserEmail(accMail);
+          setUserEmailInput(accMail);
+          fetchEmails(accMail);
         }
       } catch (err) {
         console.error(err);
@@ -205,8 +217,9 @@ export default function EmailProtectionPage() {
     if (e) e.preventDefault();
     const targetEmail = userEmailInput.trim() || 'user@gmail.com';
     setConnectedUserEmail(targetEmail);
+    setUserEmailInput(targetEmail);
     setIsConnected(true);
-    fetchEmails();
+    fetchEmails(targetEmail);
   };
 
   const [blockedSenders, setBlockedSenders] = useState([]);
@@ -377,9 +390,39 @@ export default function EmailProtectionPage() {
           </div>
 
           {/* Connected Mail ID Banner */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'rgba(52,199,89,0.1)', border: '1px solid rgba(52,199,89,0.2)', borderRadius: 8, fontSize: 13, fontWeight: 700, color: 'var(--accent-green)', marginBottom: 14 }}>
-            <ShieldCheck size={16} />
-            <span>Connected Mail ID: <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>{connectedUserEmail || 'user@gmail.com'}</strong></span>
+          <div style={{ padding: '10px 12px', background: 'rgba(52,199,89,0.08)', border: '1px solid rgba(52,199,89,0.25)', borderRadius: 10, fontSize: 13, marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: 'var(--accent-green)' }}>
+                <ShieldCheck size={16} />
+                <span>Connected Mail ID</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditingMail(!isEditingMail)}
+                style={{ background: 'none', border: 'none', color: '#0b57d0', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                {isEditingMail ? 'Cancel' : 'Switch Mail ID'}
+              </button>
+            </div>
+            {!isEditingMail ? (
+              <div style={{ fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: 13.5, marginTop: 4, wordBreak: 'break-all' }}>
+                {connectedUserEmail || 'user@gmail.com'}
+              </div>
+            ) : (
+              <form onSubmit={(e) => { e.preventDefault(); handleInstantConnect(); setIsEditingMail(false); }} style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <input
+                  type="email"
+                  required
+                  value={userEmailInput}
+                  onChange={(e) => setUserEmailInput(e.target.value)}
+                  placeholder="Enter new mail ID..."
+                  style={{ flex: 1, padding: '6px 10px', fontSize: 12.5, borderRadius: 6, border: '1px solid var(--border-subtle)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', outline: 'none' }}
+                />
+                <button type="submit" className="btn-pub" style={{ padding: '6px 12px', fontSize: 12, borderRadius: 6, background: 'var(--accent)', color: '#ffffff', border: 'none', fontWeight: 700, cursor: 'pointer' }}>
+                  Connect
+                </button>
+              </form>
+            )}
           </div>
 
           {/* Search Bar */}

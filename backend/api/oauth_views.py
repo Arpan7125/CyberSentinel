@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models import OAuthProvider, ConnectedAccount, IntegrationSyncLog
 
 # Providers with a real OAuth implementation behind them. Everything else in the
@@ -22,8 +22,8 @@ REAL_OAUTH_PROVIDER_NAMES = {"Gmail", "Google Workspace"}
 
 class OAuthProviderListView(APIView):
     """List available OAuth providers for the integration marketplace."""
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def get(self, request):
         providers = OAuthProvider.objects.filter(is_active=True).values(
@@ -36,8 +36,8 @@ class OAuthProviderListView(APIView):
 
 class OAuthStartView(APIView):
     """Generate a real Google authorization URL for a specific provider (Gmail import, sign-in)."""
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request):
         provider_id = request.data.get('provider_id')
@@ -72,8 +72,8 @@ class OAuthStartView(APIView):
 
 class OAuthCallbackView(APIView):
     """Exchange the real Google authorization code for real tokens and store the connection."""
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request):
         provider_id = request.data.get('provider_id')
@@ -108,34 +108,36 @@ class OAuthCallbackView(APIView):
 
         userinfo_resp = requests.get(GOOGLE_USERINFO_URL, headers={'Authorization': f'Bearer {access_token}'}, timeout=10)
         real_email = userinfo_resp.json().get('email', '') if userinfo_resp.status_code == 200 else ''
+        user = request.user if request.user and request.user.is_authenticated else None
+        account_id = None
+        if user:
+            account, created = ConnectedAccount.objects.update_or_create(
+                user=user,
+                provider=provider,
+                defaults={
+                    'provider_account_id': userinfo_resp.json().get('sub', '') if userinfo_resp.status_code == 200 else '',
+                    'provider_account_email': real_email,
+                    'access_token': access_token,
+                    'refresh_token': refresh_token,
+                    'scopes_granted': provider.default_scopes,
+                    'token_expires_at': timezone.now() + datetime.timedelta(seconds=expires_in),
+                    'status': 'connected',
+                    'health_status': 'Healthy'
+                }
+            )
+            account_id = account.id
 
-        account, created = ConnectedAccount.objects.update_or_create(
-            user=request.user,
-            provider=provider,
-            defaults={
-                'provider_account_id': userinfo_resp.json().get('sub', '') if userinfo_resp.status_code == 200 else '',
-                'provider_account_email': real_email,
-                'access_token': access_token,
-                'refresh_token': refresh_token,
-                'scopes_granted': provider.default_scopes,
-                'token_expires_at': timezone.now() + datetime.timedelta(seconds=expires_in),
-                'status': 'connected',
-                'health_status': 'Healthy'
-            }
-        )
-
-        # Mirror the real token so the existing Gmail import path (integrations_views.GmailImportView)
-        # picks it up automatically instead of falling back to its simulated feed.
-        if provider.name == 'Gmail':
-            from .models import UserIntegration
-            config, _ = UserIntegration.objects.get_or_create(user=request.user)
-            config.gmail_access_token = access_token
-            config.save()
+            if provider.name == 'Gmail':
+                from .models import UserIntegration
+                config, _ = UserIntegration.objects.get_or_create(user=user)
+                config.gmail_access_token = access_token
+                config.save()
 
         return Response({
             'message': f'Successfully connected to {provider.name}',
-            'account_id': account.id,
-            'email': account.provider_account_email
+            'account_id': account_id,
+            'email': real_email,
+            'access_token': access_token
         })
 
 class ConnectedAccountListView(APIView):

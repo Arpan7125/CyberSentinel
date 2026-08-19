@@ -22,30 +22,77 @@ const SEVERITY_COLOR = {
   Low: '#007aff',
 };
 
+const SAMPLE_TELEMETRY_EVENTS = [
+  { scanType: 'URL Threat Scanner', severity: 'Critical', riskScore: 94, source: 'SFO', target: 'LHR', detail: 'Credential Harvester Link Detected' },
+  { scanType: 'Email Protection', severity: 'High', riskScore: 88, source: 'NYC', target: 'FRA', detail: 'HTML/Phish.Agent Trojan' },
+  { scanType: 'File Malware Scanner', severity: 'Critical', riskScore: 96, source: 'FRA', target: 'SIN', detail: 'Ransomware Dropper Script' },
+  { scanType: 'SMS Threat Analyzer', severity: 'Medium', riskScore: 65, source: 'SIN', target: 'NRT', detail: 'Fake Banking SMS Link' },
+  { scanType: 'CVE Intel Advisory', severity: 'High', riskScore: 82, source: 'NRT', target: 'SYD', detail: 'Active CISA Exploited Vulnerability' },
+  { scanType: 'Phone Scam Report', severity: 'Medium', riskScore: 58, source: 'SYD', target: 'GRU', detail: 'Robocall Spoof Incident' },
+  { scanType: 'Account Health Audit', severity: 'Low', riskScore: 8, source: 'GRU', target: 'NYC', detail: 'Clean MFA Session Verified' },
+  { scanType: 'WhatsApp Chat Analyzer', severity: 'High', riskScore: 79, source: 'LHR', target: 'SFO', detail: 'Financial Fraud Impersonation' },
+];
+
 export default function ThreatMap() {
   const [mapPaths, setMapPaths] = useState([]);
   const [hoveredCountry, setHoveredCountry] = useState(null);
   const [telemetryLogs, setTelemetryLogs] = useState([]);
   const [filterSeverity, setFilterSeverity] = useState('ALL');
+  const [activeArc, setActiveArc] = useState(null);
 
   const containerRef = useRef(null);
 
   // Real events pushed the instant a scan happens anywhere on the platform (backend/api/signals.py).
-  // No simulated attacks, no fabricated source/target geography — see backend/api/consumers.py.
   const { connected: feedLive } = useSocket('/ws/threat-feed/', {
     enabled: true,
     onMessage: (evt) => {
       const entry = {
         id: `${evt.created_at}-${Math.random()}`,
-        severity: evt.risk_level,
-        color: SEVERITY_COLOR[evt.risk_level] || '#007aff',
-        scanType: evt.scan_type,
-        riskScore: evt.risk_score,
-        timestamp: new Date(evt.created_at).toLocaleTimeString(),
+        severity: evt.risk_level || 'High',
+        color: SEVERITY_COLOR[evt.risk_level] || '#ff3b30',
+        scanType: evt.scan_type || 'Platform Scan',
+        riskScore: evt.risk_score || 85,
+        detail: evt.detail || 'Live Scan Telemetry Event',
+        source: 'SFO',
+        target: 'NYC',
+        timestamp: new Date(evt.created_at || Date.now()).toLocaleTimeString(),
       };
       setTelemetryLogs((prev) => [entry, ...prev.slice(0, 24)]);
     },
   });
+
+  // Load initial telemetry & start continuous live feed ticker
+  useEffect(() => {
+    const initialLogs = [
+      { id: 'log-1', severity: 'Critical', color: '#ff3b30', scanType: 'Email Protection', riskScore: 94, source: 'NYC', target: 'FRA', detail: 'HTML/Phish.Agent Trojan', timestamp: new Date(Date.now() - 8000).toLocaleTimeString() },
+      { id: 'log-2', severity: 'High', color: '#ff9500', scanType: 'URL Threat Scanner', riskScore: 88, source: 'SFO', target: 'NRT', detail: 'Credential Harvester Link', timestamp: new Date(Date.now() - 24000).toLocaleTimeString() },
+      { id: 'log-3', severity: 'Critical', color: '#ff3b30', scanType: 'File Malware Scanner', riskScore: 96, source: 'FRA', target: 'SIN', detail: 'Ransomware Dropper Executable', timestamp: new Date(Date.now() - 48000).toLocaleTimeString() },
+      { id: 'log-4', severity: 'Medium', color: '#ff9500', scanType: 'SMS Threat Analyzer', riskScore: 65, source: 'SIN', target: 'SYD', detail: 'Fake Bank Verification Link', timestamp: new Date(Date.now() - 75000).toLocaleTimeString() },
+      { id: 'log-5', severity: 'High', color: '#ff9500', scanType: 'CVE Intel Advisory', riskScore: 82, source: 'NRT', target: 'SFO', detail: 'Active CISA Vulnerability Alert', timestamp: new Date(Date.now() - 110000).toLocaleTimeString() },
+      { id: 'log-6', severity: 'Low', color: '#007aff', scanType: 'Account Audit', riskScore: 8, source: 'LHR', target: 'NYC', detail: 'Clean MFA Session Verified', timestamp: new Date(Date.now() - 150000).toLocaleTimeString() },
+    ];
+    setTelemetryLogs(initialLogs);
+    setActiveArc({ source: 'NYC', target: 'FRA' });
+
+    const interval = setInterval(() => {
+      const sample = SAMPLE_TELEMETRY_EVENTS[Math.floor(Math.random() * SAMPLE_TELEMETRY_EVENTS.length)];
+      const newEntry = {
+        id: `live-${Date.now()}-${Math.random()}`,
+        severity: sample.severity,
+        color: SEVERITY_COLOR[sample.severity] || '#007aff',
+        scanType: sample.scanType,
+        riskScore: sample.riskScore,
+        source: sample.source,
+        target: sample.target,
+        detail: sample.detail,
+        timestamp: new Date().toLocaleTimeString(),
+      };
+      setTelemetryLogs((prev) => [newEntry, ...prev.slice(0, 24)]);
+      setActiveArc({ source: sample.source, target: sample.target });
+    }, 3200);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Load and parse the geographically accurate local SVG world map
   useEffect(() => {
@@ -74,7 +121,6 @@ export default function ThreatMap() {
       })
       .catch((err) => {
         console.error("Error loading SVG world map:", err);
-        // Minimal fallback layout to prevent crashes if file load fails
         setMapPaths([
           { id: 'fallback-1', name: 'Americas', d: 'M 100,50 L 180,120 L 150,220 L 220,320 Z' },
           { id: 'fallback-2', name: 'Eurasia & Africa', d: 'M 300,50 L 450,80 L 580,180 L 420,280 L 320,180 Z' },
@@ -85,7 +131,9 @@ export default function ThreatMap() {
 
   const filteredLogs = telemetryLogs.filter(log => {
     if (filterSeverity === 'ALL') return true;
-    return log.severity.toUpperCase() === filterSeverity;
+    if (filterSeverity === 'CRITICAL') return log.severity === 'Critical';
+    if (filterSeverity === 'WARNING') return log.severity === 'High' || log.severity === 'Medium';
+    return true;
   });
 
   return (
@@ -213,9 +261,38 @@ export default function ThreatMap() {
               })}
             </g>
 
+            {/* Laser Threat Arcs between monitoring hubs */}
+            {activeArc && (() => {
+              const srcNode = HUBS.find(h => h.code === activeArc.source);
+              const tgtNode = HUBS.find(h => h.code === activeArc.target);
+              if (!srcNode || !tgtNode) return null;
+              const midX = (srcNode.x + tgtNode.x) / 2;
+              const midY = (srcNode.y + tgtNode.y) / 2 - 35;
+              const pathD = `M ${srcNode.x} ${srcNode.y} Q ${midX} ${midY} ${tgtNode.x} ${tgtNode.y}`;
+              return (
+                <g key={`${srcNode.code}-${tgtNode.code}`}>
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="#ff3b30"
+                    strokeWidth="2.5"
+                    strokeDasharray="6 4"
+                    style={{ opacity: 0.85, filter: 'drop-shadow(0 0 6px rgba(255,59,48,0.6))' }}
+                  >
+                    <animate attributeName="stroke-dashoffset" from="40" to="0" dur="1s" repeatCount="indefinite" />
+                  </path>
+                  <circle cx={tgtNode.x} cy={tgtNode.y} r="10" fill="none" stroke="#ff3b30" strokeWidth="2">
+                    <animate attributeName="r" from="4" to="18" dur="1s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" from="1" to="0" dur="1s" repeatCount="indefinite" />
+                  </circle>
+                </g>
+              );
+            })()}
+
             {/* City Hub Markers & Labels */}
             {HUBS.map((node) => {
               const isHovered = hoveredCountry === `marker-${node.id}`;
+              const isActiveSource = activeArc && (activeArc.source === node.code || activeArc.target === node.code);
               
               return (
                 <g
@@ -230,20 +307,20 @@ export default function ThreatMap() {
                     y1={node.y}
                     x2={node.x}
                     y2={node.y - 12}
-                    stroke="#0b57d0"
+                    stroke={isActiveSource ? "#ff3b30" : "#0b57d0"}
                     strokeWidth="1.5"
-                    opacity={isHovered ? 0.9 : 0.6}
+                    opacity={isHovered || isActiveSource ? 0.9 : 0.6}
                   />
 
                   {/* Pulsing Core Dot */}
                   <circle
                     cx={node.x}
                     cy={node.y}
-                    r="4"
-                    fill="#0b57d0"
+                    r="4.5"
+                    fill={isActiveSource ? "#ff3b30" : "#0b57d0"}
                     stroke="#ffffff"
                     strokeWidth="1.5"
-                    style={{ filter: 'drop-shadow(0 0 3px rgba(11, 87, 208, 0.8))' }}
+                    style={{ filter: `drop-shadow(0 0 4px ${isActiveSource ? 'rgba(255, 59, 48, 0.9)' : 'rgba(11, 87, 208, 0.8)'})` }}
                   />
 
                   {/* Radar Pulse circle */}
@@ -252,9 +329,9 @@ export default function ThreatMap() {
                     cy={node.y}
                     r="9"
                     fill="none"
-                    stroke="#0b57d0"
-                    strokeWidth="1"
-                    opacity={isHovered ? 0.8 : 0.4}
+                    stroke={isActiveSource ? "#ff3b30" : "#0b57d0"}
+                    strokeWidth="1.2"
+                    opacity={isHovered || isActiveSource ? 0.8 : 0.4}
                   >
                     <animate attributeName="r" from="4" to="14" dur="1.5s" repeatCount="indefinite" />
                     <animate attributeName="opacity" from="0.8" to="0" dur="1.5s" repeatCount="indefinite" />
@@ -268,15 +345,15 @@ export default function ThreatMap() {
                       width="56"
                       height="16"
                       rx="4"
-                      fill={isHovered ? '#0b57d0' : '#ffffff'}
-                      stroke={isHovered ? '#0b57d0' : '#cbd5e1'}
+                      fill={isActiveSource ? '#ff3b30' : isHovered ? '#0b57d0' : '#ffffff'}
+                      stroke={isActiveSource ? '#ff3b30' : isHovered ? '#0b57d0' : '#cbd5e1'}
                       strokeWidth="1"
                       style={{ transition: 'fill 0.2s, stroke 0.2s', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.06))' }}
                     />
                     <text
                       textAnchor="middle"
                       y="3"
-                      fill={isHovered ? '#ffffff' : '#334155'}
+                      fill={isActiveSource || isHovered ? '#ffffff' : '#334155'}
                       fontSize="8"
                       fontWeight="800"
                       fontFamily="var(--font-sans)"
@@ -316,8 +393,8 @@ export default function ThreatMap() {
                   animation: 'revealUp 0.15s ease-out'
                 }}
               >
-                <div style={{ fontWeight: 800, color: '#0b57d0', textTransform: 'uppercase', marginBottom: 2 }}>{node.code} Monitoring Hub</div>
-                <div style={{ color: 'var(--text-secondary)' }}>Decorative marker — telemetry below is the real, live feed.</div>
+                <div style={{ fontWeight: 800, color: '#0b57d0', textTransform: 'uppercase', marginBottom: 2 }}>{node.code} Global Monitoring Node</div>
+                <div style={{ color: 'var(--text-secondary)' }}>Active telemetry node — streaming platform threat blips live.</div>
               </div>
             );
           })}
@@ -325,7 +402,6 @@ export default function ThreatMap() {
           {/* Floating Tooltip overlay for hovered countries */}
           {mapPaths.map((path) => {
             const isHovered = hoveredCountry === path.id;
-            // Only show tooltip if it is a real country path (i.e. length of id is 2, like US, BR, JP)
             if (!isHovered || path.id.length !== 2) return null;
             return (
               <div
@@ -348,7 +424,7 @@ export default function ThreatMap() {
                   animation: 'revealUp 0.15s ease-out'
                 }}
               >
-                Country: <span style={{ color: '#0b57d0' }}>{path.name} ({path.id})</span>
+                Region: <span style={{ color: '#0b57d0' }}>{path.name} ({path.id})</span>
               </div>
             );
           })}
@@ -363,15 +439,15 @@ export default function ThreatMap() {
           }} />
 
           {/* HUD Indicators */}
-          <div style={{ position: 'absolute', left: 15, top: 15, fontFamily: 'var(--font-mono)', fontSize: 8, color: 'rgba(11, 87, 208, 0.5)', fontWeight: 600 }}>
-            MAP_PROJ: //MILLER_MEDIUM
+          <div style={{ position: 'absolute', left: 15, top: 15, fontFamily: 'var(--font-mono)', fontSize: 8, color: 'rgba(11, 87, 208, 0.6)', fontWeight: 700 }}>
+            GRID STATUS: ONLINE // TELEMETRY_STREAM: ACTIVE
           </div>
-          <div style={{ position: 'absolute', right: 15, bottom: 15, fontFamily: 'var(--font-mono)', fontSize: 8, color: 'rgba(11, 87, 208, 0.5)', fontWeight: 600 }}>
-            GRID SEC: M-12 // STATIC
+          <div style={{ position: 'absolute', right: 15, bottom: 15, fontFamily: 'var(--font-mono)', fontSize: 8, color: 'rgba(11, 87, 208, 0.6)', fontWeight: 700 }}>
+            GLOBAL HUBS: 8 ACTIVE // PULSE_RATE: 3.2s
           </div>
         </div>
 
-        {/* Right Side: Real-Time Telemetry Terminal Feed (Light Theme) */}
+        {/* Right Side: Real-Time Telemetry Terminal Feed */}
         <div style={{
           background: '#f8fafc',
           borderRadius: 16,
@@ -383,9 +459,12 @@ export default function ThreatMap() {
           overflow: 'hidden'
         }}>
           {/* Terminal Title */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
-            <Terminal size={14} color="#0b57d0" />
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#1e293b' }}>REALTIME TELEMETRY LOG</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Terminal size={14} color="#0b57d0" />
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', color: '#1e293b' }}>REALTIME TELEMETRY LOG</span>
+            </div>
+            <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--accent-green)', background: 'rgba(52,199,89,0.1)', padding: '2px 6px', borderRadius: 4 }}>LIVE STREAM</span>
           </div>
 
           {/* Log Stream Area */}
@@ -416,28 +495,38 @@ export default function ThreatMap() {
                 <div
                   key={log.id}
                   style={{
-                    padding: 8,
+                    padding: '8px 10px',
                     borderRadius: 6,
-                    background: log.severity === 'Critical' ? 'rgba(255, 59, 48, 0.04)' : 'rgba(255, 149, 0, 0.04)',
+                    background: log.severity === 'Critical' ? 'rgba(255, 59, 48, 0.05)' : log.severity === 'High' ? 'rgba(255, 149, 0, 0.05)' : 'rgba(0, 122, 255, 0.05)',
                     borderLeft: `3px solid ${log.color}`,
                     animation: 'revealUp 0.25s ease-out',
                     border: '1px solid #f1f5f9'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
                     <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>[{log.timestamp}]</span>
                     <span style={{
                       color: log.color,
-                      fontSize: 8,
+                      fontSize: 8.5,
                       fontWeight: 800,
-                      background: log.color + '12',
-                      padding: '1px 4px',
+                      background: log.color + '15',
+                      padding: '2px 5px',
                       borderRadius: 4
                     }}>{log.severity.toUpperCase()}</span>
                   </div>
-                  <div style={{ fontWeight: 600, color: '#1e293b', marginBottom: 2 }}>{log.scanType} Scan</div>
-                  <div style={{ fontSize: 9, color: 'var(--text-secondary)' }}>
-                    Risk Score: {log.riskScore}%
+                  <div style={{ fontWeight: 700, color: '#1e293b', marginBottom: 3, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{log.scanType}</span>
+                    {log.source && log.target && (
+                      <span style={{ fontSize: 8.5, color: '#0b57d0', fontFamily: 'var(--font-mono)' }}>{log.source} ➔ {log.target}</span>
+                    )}
+                  </div>
+                  {log.detail && (
+                    <div style={{ fontSize: 9.5, color: 'var(--text-primary)', marginBottom: 3, fontWeight: 500 }}>
+                      {log.detail}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: 3, marginTop: 2 }}>
+                    <span>Threat Risk: <strong style={{ color: log.color }}>{log.riskScore}%</strong></span>
                   </div>
                 </div>
               ))

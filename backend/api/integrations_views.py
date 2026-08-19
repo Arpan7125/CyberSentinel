@@ -134,6 +134,8 @@ def sync_gmail_real(user, access_token):
 class GmailImportView(APIView):
     """Import and scan real Gmail inbox messages. Requires a real connected Gmail
     account (see oauth_views.OAuthCallbackView) — no simulated fallback."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request):
         user = request.user if request.user and request.user.is_authenticated else None
