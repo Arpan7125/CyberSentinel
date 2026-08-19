@@ -1,7 +1,10 @@
 # Render blueprint for the CyberSentinel backend.
 #
 # The frontend deploys separately to Vercel (see frontend/vercel.json), so this
-# file provisions only the API, its database, and its Redis instance.
+# file provisions only the API and its database — both on Render's FREE tier, so
+# applying this Blueprint should not ask for payment. Redis is intentionally
+# omitted (the app falls back to an in-memory channel layer); add it only when
+# scaling past a single worker.
 #
 # Apply with: Render Dashboard → New → Blueprint → point at this repository.
 #
@@ -52,11 +55,10 @@ services:
           name: cybersentinel-db
           property: connectionString
 
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: cybersentinel-redis
-          property: connectionString
+      # No REDIS_URL: the free tier runs a single worker, so the in-memory
+      # channel layer handles live WebSocket push fine (settings.py falls back
+      # automatically). Add a Redis service and this key only if you scale to
+      # multiple workers and need broadcasts to reach all of them.
 
       - key: LOG_LEVEL
         value: INFO
@@ -88,16 +90,9 @@ services:
       - key: IPQS_API_KEY
         sync: false
 
-  # Redis is a service on Render, not a database entry. It backs the Channels
-  # layer so WebSocket broadcasts reach every worker.
-  - type: redis
-    name: cybersentinel-redis
-    plan: starter
-    region: oregon
-    ipAllowList: []        # Reachable only from inside the Render network
-
 databases:
   - name: cybersentinel-db
-    plan: basic-256mb
+    plan: free            # Free Postgres (Render deletes it after 30 days —
+                          # upgrade to a paid plan before then to keep the data)
     region: oregon
     postgresMajorVersion: "16"
