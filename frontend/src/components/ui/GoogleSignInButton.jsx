@@ -30,6 +30,14 @@ export default function GoogleSignInButton({ onCredential, onError, text = 'sign
   const containerRef = useRef(null);
   const [ready, setReady] = useState(false);
 
+  const onCredentialRef = useRef(onCredential);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onCredentialRef.current = onCredential;
+    onErrorRef.current = onError;
+  }, [onCredential, onError]);
+
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
     let cancelled = false;
@@ -39,7 +47,7 @@ export default function GoogleSignInButton({ onCredential, onError, text = 'sign
         if (cancelled || !containerRef.current) return;
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
-          callback: (response) => onCredential(response.credential),
+          callback: (response) => onCredentialRef.current?.(response.credential),
         });
         window.google.accounts.id.renderButton(containerRef.current, {
           theme: 'outline',
@@ -49,10 +57,10 @@ export default function GoogleSignInButton({ onCredential, onError, text = 'sign
         });
         setReady(true);
       })
-      .catch(() => onError?.('Failed to load Google Sign-In.'));
+      .catch(() => onErrorRef.current?.('Failed to load Google Sign-In.'));
 
     return () => { cancelled = true; };
-  }, [onCredential, onError, text]);
+  }, [text]);
 
   if (!GOOGLE_CLIENT_ID) {
     return (
