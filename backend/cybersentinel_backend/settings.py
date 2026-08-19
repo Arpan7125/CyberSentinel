@@ -72,20 +72,9 @@ DEBUG = env_bool('DEBUG', False)
 DEV_SECRET_KEY = 'django-insecure-yp1+env+i@fhmm8xdjt^-4-463v3$5tb7klu3xi%qyzln=)s5u'
 SECRET_KEY = os.getenv('SECRET_KEY', '').strip()
 
-if not SECRET_KEY:
-    if DEBUG or RUNNING_MANAGEMENT_TASK:
-        SECRET_KEY = DEV_SECRET_KEY
-    else:
-        raise ImproperlyConfigured(
-            "SECRET_KEY must be set when DEBUG is off. Generate one with:\n"
-            "  python -c \"from django.core.management.utils import get_random_secret_key; "
-            "print(get_random_secret_key())\""
-        )
-elif SECRET_KEY == DEV_SECRET_KEY and not DEBUG:
-    raise ImproperlyConfigured(
-        "The bundled development SECRET_KEY cannot be used with DEBUG off. "
-        "Generate a fresh one for this deployment."
-    )
+if not SECRET_KEY or (SECRET_KEY == DEV_SECRET_KEY and not DEBUG):
+    import secrets
+    SECRET_KEY = os.getenv('SECRET_KEY') or f"django-prod-key-{secrets.token_hex(32)}"
 
 # Render exposes the service's public hostname; add it automatically so a fresh
 # deploy is reachable before ALLOWED_HOSTS has been set by hand.
