@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { KeyRound, ShieldCheck, Database, Smartphone, Zap, CheckCircle2 } from 'lucide-react';
+import { KeyRound, ShieldCheck, Database, Smartphone, CheckCircle2 } from 'lucide-react';
 import { integrationsService } from '../../services/api';
 
 export default function ApiIntegrationsPage() {
   const [keys, setKeys] = useState({
-    openai_api_key: '',
     virustotal_api_key: '',
     twilio_sid: '',
     twilio_token: '',
@@ -20,7 +19,6 @@ export default function ApiIntegrationsPage() {
         const response = await integrationsService.getConfig();
         if (active && response) {
           setKeys({
-            openai_api_key: response.openai_api_key || '',
             virustotal_api_key: response.virustotal_api_key || '',
             twilio_sid: response.twilio_sid || '',
             twilio_token: response.twilio_token || '',
@@ -73,29 +71,13 @@ export default function ApiIntegrationsPage() {
         </div>
         <div>
           <h1 className="page-title" style={{ margin: 0, fontSize: 28 }}>API Integrations Manager</h1>
-          <p className="page-subtitle" style={{ margin: 0, marginTop: 4 }}>Configure third-party API keys to power the platform's AI and threat intelligence engines.</p>
+          <p className="page-subtitle" style={{ margin: 0, marginTop: 4 }}>Configure the external API keys for VirusTotal scanning and Twilio SMS alerts. Email, SMS, and screenshot analysis run on the platform's own built-in models — no external AI key required.</p>
         </div>
       </div>
 
       <div style={{ maxWidth: 800 }}>
         <form onSubmit={handleSave} className="glass-card" style={{ padding: 32 }}>
           
-          <div style={{ marginBottom: 32 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <Zap size={20} color="var(--accent-purple)" />
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>OpenAI (AI Analysis)</h3>
-            </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 16 }}>Powers the intelligent email threat assessment, SMS parsing, and visual screenshot analysis.</p>
-            <input 
-              type="password" 
-              name="openai_api_key"
-              placeholder="sk-..."
-              value={keys.openai_api_key}
-              onChange={handleChange}
-              style={{ width: '100%', padding: 16, background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none' }}
-            />
-          </div>
-
           <div style={{ marginBottom: 32, paddingBottom: 32, borderBottom: '1px solid var(--border-subtle)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <Database size={20} color="var(--accent-teal)" />
@@ -115,9 +97,9 @@ export default function ApiIntegrationsPage() {
           <div style={{ marginBottom: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <Smartphone size={20} color="var(--accent-orange)" />
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Twilio Configuration (Phone Scam Intel)</h3>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Twilio (SMS Alerts)</h3>
             </div>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 16 }}>Identifies carrier information and flags high-risk VoIP numbers in the Phone Lookup tool.</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 16 }}>Sends outbound SMS warning messages. Without these, alerts are written to the server log instead of being delivered.</p>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
@@ -158,10 +140,12 @@ export default function ApiIntegrationsPage() {
         <div className="glass-card" style={{ padding: 24, marginTop: 24, display: 'flex', gap: 16, alignItems: 'flex-start' }}>
           <ShieldCheck size={24} color="var(--accent-green)" />
           <div>
-            <h4 style={{ margin: '0 0 8px 0', fontSize: 16 }}>Secure Storage</h4>
+            <h4 style={{ margin: '0 0 8px 0', fontSize: 16 }}>How these keys are stored</h4>
             <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.5 }}>
-              All API keys are encrypted at rest using AES-256 and are never exposed to the frontend client after saving. 
-              Once you add these keys, the simulated dummy data on the user dashboard will be dynamically replaced with real-time API responses.
+              Keys are saved to your account on the server and are only used to call the service they belong to.
+              They are stored as plain text in the database, not encrypted at rest — so treat database access as
+              equivalent to holding these keys, and prefer scoped keys you can revoke.
+              A key left blank simply leaves that feature reporting itself as not configured.
             </p>
           </div>
         </div>
