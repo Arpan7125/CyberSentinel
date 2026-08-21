@@ -1119,6 +1119,57 @@ img { max-width: 100%; height: auto; }
 .empty-state-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
 .empty-state-desc { font-size: 13px; color: var(--text-secondary); max-width: 360px; margin-bottom: 20px; line-height: 1.6; }
 
+/* ── Admin KPI icon chip + designed empty state ──────────────────────── */
+.kpi-chip {
+  display: grid; place-items: center; width: 36px; height: 36px; flex: none;
+  border-radius: 11px; background: var(--accent-soft); color: var(--accent);
+}
+.kpi-live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-green); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-green) 20%, transparent); }
+.kpi-live-dot.off { background: var(--accent-orange); box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent-orange) 20%, transparent); }
+
+/* The "your SOC is live but quiet" state — deliberately designed so a fresh
+   deployment reads as ready-and-waiting, not broken-and-empty. Honest: it
+   never invents activity, it explains what will appear once scans run. */
+.soc-empty {
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 60px 28px 52px; gap: 8px;
+  background:
+    radial-gradient(120% 80% at 50% -10%, var(--accent-soft) 0%, transparent 60%),
+    var(--bg-card);
+}
+.soc-empty::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .5;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(70% 60% at 50% 0%, #000 0%, transparent 75%);
+}
+.soc-empty > * { position: relative; z-index: 1; }
+.soc-empty-badge {
+  display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 16px;
+  border-radius: 18px; color: var(--accent);
+  background: var(--bg-secondary); border: 1px solid var(--accent-soft);
+  box-shadow: 0 8px 28px -12px var(--accent-glow);
+}
+.soc-empty h3 { font-size: 19px; font-weight: 750; letter-spacing: -0.02em; }
+.soc-empty p { font-size: 14px; color: var(--text-secondary); max-width: 460px; line-height: 1.65; margin-top: 4px; }
+.soc-empty-status {
+  display: inline-flex; align-items: center; gap: 8px; margin-top: 6px;
+  font-size: 12px; font-weight: 650; font-family: var(--font-mono);
+  color: var(--text-secondary);
+  background: var(--bg-secondary); border: 1px solid var(--border-subtle);
+  padding: 6px 13px; border-radius: 999px;
+}
+.soc-empty-hints { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 24px; }
+.soc-empty-hint {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 550;
+  color: var(--text-secondary); background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle); border-radius: 10px; padding: 9px 14px;
+}
+.soc-empty-hint svg { color: var(--accent); flex: none; }
+
 /* Timeline */
 .timeline { display: flex; flex-direction: column; gap: 0; position: relative; }
 .timeline::before { content: ''; position: absolute; left: 11px; top: 20px; bottom: 20px; width: 2px; background: var(--border-subtle); }
