@@ -142,3 +142,39 @@ export function validateEmail(value) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return 'Enter a valid email address.';
   return null;
 }
+
+/**
+ * A shape check for phone numbers.
+ *
+ * Deliberately not a reimplementation of libphonenumber — the server parses the
+ * number properly with the `phonenumbers` library and is what actually decides.
+ * This only catches the obvious cases (letters, far too few or too many digits)
+ * so a typo does not cost a round trip. E.164 allows at most 15 digits, and no
+ * national number is shorter than about 7.
+ *
+ * `required: false` treats an empty value as valid, for optional fields.
+ */
+export function validatePhone(value, { required = true } = {}) {
+  const raw = (value || '').trim();
+  if (!raw) return required ? 'Enter a phone number.' : null;
+
+  // Permit the separators people actually type, and a single leading +.
+  if (!/^\+?[\d\s().-]+$/.test(raw)) {
+    return 'A phone number can only contain digits, spaces and + ( ) - characters.';
+  }
+
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7) return 'That number looks too short. Include the area code.';
+  if (digits.length > 15) return 'That number looks too long to be valid.';
+
+  return null;
+}
+
+/** Length guard for a free-text field, so the server does not silently truncate. */
+export function validateMaxLength(value, maxChars, label = 'This field') {
+  const text = (value || '').trim();
+  if (text.length > maxChars) {
+    return `${label} must be ${maxChars} characters or fewer.`;
+  }
+  return null;
+}

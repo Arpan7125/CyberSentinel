@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { useAuth } from '../../AuthContext';
 import { authService } from '../../services/api';
+import { validateEmail, validatePhone, validateMaxLength } from '../../utils/validation';
 
 export default function ProfilePage() {
   const { user, setUser } = useAuth();
@@ -20,6 +22,37 @@ export default function ProfilePage() {
 
   const [status, setStatus] = useState({ type: '', message: '' });
   const [pwdStatus, setPwdStatus] = useState({ type: '', message: '' });
+
+  // Per-field messages, so an error appears next to the input that caused it
+  // rather than only as one banner at the top of the page.
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  /** Mirrors the server's rules. The server re-checks and remains the authority. */
+  const validatePersonal = () => {
+    const errors = {};
+
+    if (!personalForm.fullName.trim()) {
+      errors.fullName = 'Enter your name.';
+    } else {
+      const tooLong = validateMaxLength(personalForm.fullName, 150, 'Your name');
+      if (tooLong) errors.fullName = tooLong;
+    }
+
+    const emailError = validateEmail(personalForm.email);
+    if (emailError) errors.email = emailError;
+
+    // Optional: an empty phone clears the stored value.
+    const phoneError = validatePhone(personalForm.phone, { required: false });
+    if (phoneError) errors.phone = phoneError;
+
+    const companyError = validateMaxLength(personalForm.company, 150, 'Organization');
+    if (companyError) errors.company = companyError;
+
+    return errors;
+  };
+
+  const clearFieldError = (name) =>
+    setFieldErrors(prev => (prev[name] ? { ...prev, [name]: undefined } : prev));
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -44,6 +77,15 @@ export default function ProfilePage() {
   const handlePersonalSubmit = async (e) => {
     e.preventDefault();
     setStatus({ type: '', message: '' });
+
+    const errors = validatePersonal();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setStatus({ type: 'error', message: 'Fix the highlighted fields and try again.' });
+      return;
+    }
+    setFieldErrors({});
+
     try {
       const res = await authService.updateProfile({
         full_name: personalForm.fullName,
@@ -149,42 +191,78 @@ export default function ProfilePage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="form-group">
-              <label className="form-label-pub">Full Name</label>
+              <label className="form-label-pub" htmlFor="profile-name">Full Name</label>
               <input
+                id="profile-name"
                 type="text"
                 className="form-input-pub"
                 value={personalForm.fullName}
-                onChange={e => setPersonalForm(p => ({ ...p, fullName: e.target.value }))}
+                onChange={e => { setPersonalForm(p => ({ ...p, fullName: e.target.value })); clearFieldError('fullName'); }}
+                maxLength={150}
+                aria-invalid={fieldErrors.fullName ? 'true' : undefined}
+                aria-describedby={fieldErrors.fullName ? 'profile-name-error' : undefined}
                 required
               />
+              {fieldErrors.fullName && (
+                <p id="profile-name-error" className="field-error" role="alert">
+                  <AlertTriangle size={14} aria-hidden="true" /><span>{fieldErrors.fullName}</span>
+                </p>
+              )}
             </div>
             <div className="form-group">
-              <label className="form-label-pub">Email Address</label>
+              <label className="form-label-pub" htmlFor="profile-email">Email Address</label>
               <input
+                id="profile-email"
                 type="email"
                 className="form-input-pub"
                 value={personalForm.email}
-                onChange={e => setPersonalForm(p => ({ ...p, email: e.target.value }))}
+                onChange={e => { setPersonalForm(p => ({ ...p, email: e.target.value })); clearFieldError('email'); }}
+                aria-invalid={fieldErrors.email ? 'true' : undefined}
+                aria-describedby={fieldErrors.email ? 'profile-email-error' : undefined}
                 required
               />
+              {fieldErrors.email && (
+                <p id="profile-email-error" className="field-error" role="alert">
+                  <AlertTriangle size={14} aria-hidden="true" /><span>{fieldErrors.email}</span>
+                </p>
+              )}
             </div>
             <div className="form-group">
-              <label className="form-label-pub">Phone Number</label>
+              <label className="form-label-pub" htmlFor="profile-phone">Phone Number</label>
               <input
-                type="text"
+                id="profile-phone"
+                type="tel"
                 className="form-input-pub"
+                placeholder="+1 415 555 2671"
                 value={personalForm.phone}
-                onChange={e => setPersonalForm(p => ({ ...p, phone: e.target.value }))}
+                onChange={e => { setPersonalForm(p => ({ ...p, phone: e.target.value })); clearFieldError('phone'); }}
+                maxLength={32}
+                aria-invalid={fieldErrors.phone ? 'true' : undefined}
+                aria-describedby={fieldErrors.phone ? 'profile-phone-error' : undefined}
               />
+              {fieldErrors.phone && (
+                <p id="profile-phone-error" className="field-error" role="alert">
+                  <AlertTriangle size={14} aria-hidden="true" /><span>{fieldErrors.phone}</span>
+                </p>
+              )}
             </div>
             <div className="form-group">
-              <label className="form-label-pub">Organization</label>
+              <label className="form-label-pub" htmlFor="profile-company">Organization</label>
               <input
+                id="profile-company"
                 type="text"
                 className="form-input-pub"
                 value={personalForm.company}
-                onChange={e => setPersonalForm(p => ({ ...p, company: e.target.value }))}
+                onChange={e => { setPersonalForm(p => ({ ...p, company: e.target.value })); clearFieldError('company'); }}
+                maxLength={150}
+                aria-invalid={fieldErrors.company ? 'true' : undefined}
+                aria-describedby={fieldErrors.company ? 'profile-company-error' : undefined}
               />
+              {fieldErrors.company && (
+                <p id="profile-company-error" className="field-error" role="alert">
+                  <AlertTriangle size={14} aria-hidden="true" /><span>{fieldErrors.company}</span>
+                </p>
+              )}
             </div>
           </div>
 

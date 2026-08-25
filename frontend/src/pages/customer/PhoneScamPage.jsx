@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Smartphone, Phone, ShieldAlert, AlertTriangle, CheckCircle, Globe, Flag, User, MapPin } from 'lucide-react';
+import { Smartphone, Phone } from 'lucide-react';
 import { scanService, saasService } from '../../services/api';
+import { validatePhone } from '../../utils/validation';
 
 export default function PhoneScamPage() {
   const [phone, setPhone] = useState('');
@@ -14,7 +15,16 @@ export default function PhoneScamPage() {
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    if (!phone) return;
+
+    // Previously this only checked the field was non-empty, so "add" or any
+    // other junk was sent to the lookup and came back as a server-side error.
+    const phoneError = validatePhone(phone);
+    if (phoneError) {
+      setError(phoneError);
+      setResult(null);
+      return;
+    }
+
     setIsSearching(true);
     setResult(null);
     setReportSuccess('');
@@ -76,7 +86,9 @@ export default function PhoneScamPage() {
               type="tel" 
               placeholder="Enter phone number (e.g. +1 555-0199)" 
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => { setPhone(e.target.value); if (error) setError(''); }}
+              maxLength={32}
+              aria-invalid={error ? 'true' : undefined}
               style={{ width: '100%', padding: '16px 16px 16px 48px', fontSize: 16, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none' }}
             />
           </div>
