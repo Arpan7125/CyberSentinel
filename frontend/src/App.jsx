@@ -76,7 +76,6 @@ const CyberIntelPage = lazy(() => import('./pages/customer/CyberIntelPage'));
 const ConnectedAccountsPage = lazy(() => import('./pages/customer/ConnectedAccountsPage'));
 const OAuthCallbackPage = lazy(() => import('./pages/customer/OAuthCallbackPage'));
 // Utility Components
-const TextScanner = lazy(() => import('./components/TextScanner'));
 const IncidentInbox = lazy(() => import('./components/IncidentInbox'));
 const AwarenessCenter = lazy(() => import('./components/AwarenessCenter'));
 const ApiSandbox = lazy(() => import('./components/ApiSandbox'));
@@ -199,7 +198,7 @@ function AppContent() {
             <Route path="url-scanner" element={<UrlScannerPage />} />
             <Route path="file-scanner" element={<FileScannerPage />} />
             <Route path="screenshot-scanner" element={<ScreenshotAnalyzerPage />} />
-            <Route path="text-scan" element={<TextScanner />} />
+            <Route path="text-scan" element={<Navigate to="/dashboard/message-analyzer" replace />} />
             <Route path="incidents" element={<IncidentInbox />} />
             <Route path="awareness" element={<AwarenessCenter />} />
             <Route path="api-sandbox" element={<ApiSandbox />} />
