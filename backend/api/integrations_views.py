@@ -1,6 +1,7 @@
 import base64
 import logging
 import re
+from datetime import timezone as dt_timezone
 
 import phonenumbers
 import requests
@@ -8,6 +9,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.conf import settings
+from django.utils import timezone
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
@@ -89,6 +91,43 @@ class UserIntegrationView(APIView):
         return Response({'message': 'Integration settings saved.'}, status=status.HTTP_200_OK)
 
 
+def _gmail_credentials(user, access_token):
+    """Build Google credentials that can refresh themselves.
+
+    A Google access token expires after about an hour. Constructing
+    `Credentials(token=...)` with nothing else produces an object that cannot
+    renew itself, so every import past the first hour failed with "the
+    credentials do not contain the necessary fields need to refresh the access
+    token". The refresh token is already stored on the user's ConnectedAccount
+    from the OAuth callback — it just was not being handed over.
+
+    Returns (credentials, connected_account). The account is returned so the
+    caller can persist a token that google-auth refreshed for us.
+    """
+    from .models import ConnectedAccount
+
+    account = (
+        ConnectedAccount.objects
+        .filter(user=user, provider__name='Gmail')
+        .exclude(refresh_token='')
+        .first()
+        if user and user.is_authenticated else None
+    )
+
+    if not account or not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
+        # No refresh material available. Still usable until the token expires,
+        # which keeps a freshly-connected account working.
+        return Credentials(token=access_token), None
+
+    return Credentials(
+        token=access_token or account.access_token,
+        refresh_token=account.refresh_token,
+        token_uri='https://oauth2.googleapis.com/token',
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+    ), account
+
+
 def sync_gmail_real(user, access_token):
     """Fetch and scan real inbox messages via the Gmail API. Returns None if the
     Google client libs aren't installed or the API call fails — callers decide
@@ -96,7 +135,7 @@ def sync_gmail_real(user, access_token):
     if not GOOGLE_LIBS_AVAILABLE or not access_token:
         return None
     try:
-        creds = Credentials(token=access_token)
+        creds, account = _gmail_credentials(user, access_token)
         service = build('gmail', 'v1', credentials=creds)
 
         list_response = service.users().messages().list(userId='me', q='label:INBOX', maxResults=5).execute()
@@ -158,9 +197,27 @@ def sync_gmail_real(user, access_token):
                 'dkim': _auth_verdict('dkim'),
                 'dmarc': _auth_verdict('dmarc'),
             })
+
+        # google-auth refreshes in place when the token has expired. Persist the
+        # new one so the next import starts from a valid token instead of paying
+        # for a refresh round-trip every time.
+        if account is not None and creds.token and creds.token != account.access_token:
+            account.access_token = creds.token
+            expiry = getattr(creds, 'expiry', None)
+            if expiry:
+                # google-auth reports expiry as a naive UTC datetime; the project
+                # runs with USE_TZ=True, so it has to be made aware before saving.
+                if timezone.is_naive(expiry):
+                    expiry = timezone.make_aware(expiry, dt_timezone.utc)
+                account.token_expires_at = expiry
+            account.save(update_fields=['access_token', 'token_expires_at'])
+
+            from .models import UserIntegration
+            UserIntegration.objects.filter(user=user).update(gmail_access_token=creds.token)
+
         return results
     except Exception as e:
-        print(f"[GMAIL API IMPORT ERROR] {str(e)}")
+        logger.warning('Gmail import failed for user %s: %s', getattr(user, 'id', None), e)
         return None
 
 
