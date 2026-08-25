@@ -24,3 +24,14 @@ class AuthThrottle(AnonRateThrottle):
 
 #: Attach to any view that performs a scan.
 SCAN_THROTTLES = [ScanAnonThrottle, ScanUserThrottle]
+
+
+class SmsThrottle(UserRateThrottle):
+    """Outbound SMS. Separate from the general user allowance because each
+    message costs money and lands on someone's phone."""
+    scope = 'sms'
+
+
+class PublicWriteThrottle(AnonRateThrottle):
+    """Unauthenticated form submissions — contact requests, scam reports."""
+    scope = 'public_write'

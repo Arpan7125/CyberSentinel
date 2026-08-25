@@ -1,46 +1,121 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 
+/**
+ * Authentication state.
+ *
+ * The rule this file now follows, which it previously did not: **only the
+ * server can create a session.** Every auth call used to be wrapped in a catch
+ * that, on any network error, called `createLocalUserSession()` — writing a
+ * fabricated `cs_local_token_<timestamp>` and a logged-in user into
+ * localStorage. The admin variant passed `role: 'admin'`, so blocking a single
+ * request in devtools walked straight into the admin workspace with no
+ * password. A hardcoded `'123456'` was also accepted as a valid OTP. All of
+ * that is gone: a failed request is an error the user sees, never a sign-in.
+ *
+ * The cached user in localStorage is a rendering hint so the shell does not
+ * flash on reload. It is never authority — `/auth/profile/` is re-verified on
+ * mount, and a rejected token clears the session. Route guards keyed off this
+ * object only decide what to *draw*; every privileged action is authorised
+ * again server-side.
+ */
+
 const AuthContext = createContext(null);
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
-const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes session timeout
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // sign out after 15 minutes idle
+const TOKEN_KEY = 'cs_token';
+const USER_KEY = 'cs_user';
+
+/** Roles are derived from the server's own flags, never from a client field. */
+function deriveUser(payload) {
+  const isAdmin = Boolean(payload.is_admin || payload.is_staff || payload.is_superuser);
+  return {
+    ...payload,
+    role: payload.role || (isAdmin ? 'admin' : 'customer'),
+    is_admin: isAdmin,
+  };
+}
+
+function readStoredUser() {
+  try {
+    const saved = localStorage.getItem(USER_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    // Corrupt or unreadable storage: start signed out rather than crashing.
+    localStorage.removeItem(USER_KEY);
+    return null;
+  }
+}
+
+/** Turn a fetch failure into a message a person can act on. */
+async function readError(response, fallback) {
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    // no JSON body
+  }
+  if (response.status === 429) {
+    return 'Too many attempts. Wait a few minutes before trying again.';
+  }
+  return data?.error || data?.detail || fallback;
+}
+
+function isNetworkError(err) {
+  return err instanceof TypeError || /fetch|network/i.test(err?.message || '');
+}
+
+const OFFLINE_MESSAGE =
+  "Can't reach CyberSentinel right now. Check your connection and try again.";
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('cs_token') || null);
-  const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('cs_user');
-    return savedUser ? JSON.parse(savedUser) : null;
-  });
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || null);
+  const [user, setUser] = useState(readStoredUser);
   const [loading, setLoading] = useState(false);
+  const [sessionNotice, setSessionNotice] = useState(null);
 
   const lastActivityRef = useRef(Date.now());
+
+  const clearSession = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  const persistSession = useCallback((authToken, payload) => {
+    const nextUser = deriveUser(payload);
+    localStorage.setItem(TOKEN_KEY, authToken);
+    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+    setToken(authToken);
+    setUser(nextUser);
+    return nextUser;
+  }, []);
 
   const logout = useCallback(async () => {
     if (token) {
       try {
         await fetch(`${API}/auth/logout/`, {
           method: 'POST',
-          headers: { Authorization: `Token ${token}` }
+          headers: { Authorization: `Token ${token}` },
         });
-      } catch (err) {
-        console.error("Logout request error:", err);
+      } catch {
+        // The token is being discarded locally regardless; a failed
+        // server-side logout is not worth blocking the user on.
       }
     }
-    localStorage.removeItem('cs_token');
-    localStorage.removeItem('cs_user');
-    setToken(null);
-    setUser(null);
-  }, [token]);
+    clearSession();
+  }, [token, clearSession]);
 
-  // Session Inactivity & Auth Error Monitor
+  // Idle timeout and global 401 handling.
   useEffect(() => {
-    if (!user) return;
+    if (!user) return undefined;
 
     const handleActivity = () => {
       lastActivityRef.current = Date.now();
     };
-
     const handleAuthError = () => {
+      setSessionNotice('Your session ended. Sign in again to continue.');
       logout();
     };
 
@@ -51,12 +126,13 @@ export function AuthProvider({ children }) {
     window.addEventListener('auth-error', handleAuthError);
 
     const interval = setInterval(() => {
-      const now = Date.now();
-      if (now - lastActivityRef.current > SESSION_TIMEOUT_MS) {
-        alert('Session expired due to inactivity. Please log in again.');
+      if (Date.now() - lastActivityRef.current > SESSION_TIMEOUT_MS) {
+        // A blocking window.alert() steals focus and ignores the design
+        // system; the notice is rendered in the UI instead.
+        setSessionNotice('Signed out after 15 minutes of inactivity.');
         logout();
       }
-    }, 30000); // Check every 30 seconds
+    }, 30000);
 
     return () => {
       window.removeEventListener('mousemove', handleActivity);
@@ -68,285 +144,190 @@ export function AuthProvider({ children }) {
     };
   }, [user, logout]);
 
-  // Verify stored token on mount or token changes
+  // Re-verify the stored token against the server on mount.
   useEffect(() => {
-    let active = true;
-    if (token) {
-      setLoading(true);
-      fetch(`${API}/auth/profile/`, {
-        headers: { Authorization: `Token ${token}` },
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (!active) return;
-          if (data) {
-            const fetchedUser = {
-              ...data,
-              role: data.role || (data.is_admin || data.is_superuser || data.is_staff ? 'admin' : 'customer'),
-            };
-            setUser(fetchedUser);
-            localStorage.setItem('cs_user', JSON.stringify(fetchedUser));
-          } else {
-            if (token.startsWith('cs_local_')) return;
-            logout();
-          }
-        })
-        .catch(() => {
-          if (!active) return;
-          // Keep existing local user on network connection error
-          setLoading(false);
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        });
-    } else {
+    if (!token) {
       setLoading(false);
+      return undefined;
     }
+
+    let active = true;
+    setLoading(true);
+
+    fetch(`${API}/auth/profile/`, { headers: { Authorization: `Token ${token}` } })
+      .then(async (response) => {
+        if (!active) return;
+        if (response.ok) {
+          const data = await response.json();
+          const verified = deriveUser(data);
+          setUser(verified);
+          localStorage.setItem(USER_KEY, JSON.stringify(verified));
+        } else if (response.status === 401 || response.status === 403) {
+          // The server rejected this token. It is not valid, whatever
+          // localStorage says.
+          clearSession();
+        }
+        // Any other status (500, 502) is a server problem, not an invalid
+        // session — keep the cached user and let the next call decide.
+      })
+      .catch(() => {
+        // Offline. The cached user stays for rendering, but no privileged
+        // request will succeed until the API is reachable again, so nothing
+        // is actually granted by keeping it.
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
     return () => {
       active = false;
     };
-  }, [token, logout]);
+  }, [token, clearSession]);
 
-  const createLocalUserSession = (usernameOrEmail, role = 'customer') => {
-    const isEmail = usernameOrEmail.includes('@');
-    const username = isEmail ? usernameOrEmail.split('@')[0] : usernameOrEmail;
-    const email = isEmail ? usernameOrEmail : `${username}@cybersentinel.local`;
-    const localToken = `cs_local_token_${Date.now()}`;
-    const loggedUser = {
-      id: Date.now(),
-      username: username,
-      email: email,
-      role: role,
-      is_admin: role === 'admin',
-    };
-    localStorage.setItem('cs_token', localToken);
-    localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-    setToken(localToken);
-    setUser(loggedUser);
-    return { user: loggedUser };
-  };
-
-  const login = useCallback(async (username, password) => {
+  /** Shared request/response handling for every credential exchange. */
+  const authRequest = useCallback(async (path, body, fallbackMessage) => {
+    let response;
     try {
-      const res = await fetch(`${API}/auth/login/`, {
+      response = await fetch(`${API}${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
+        body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Invalid username or password.');
-      }
-
-      if (data.requiresMFA) {
-        return { requiresMFA: true };
-      }
-
-      localStorage.setItem('cs_token', data.token);
-      setToken(data.token);
-
-      const loggedUser = {
-        ...data.user,
-        role: data.user.role || (data.user.is_superuser || data.user.is_staff ? 'admin' : 'customer'),
-      };
-      setUser(loggedUser);
-      localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-      return { user: loggedUser };
     } catch (err) {
-      if (err.name === 'TypeError' || (err.message && err.message.includes('fetch'))) {
-        console.warn('Backend API server unreachable, activating local session fallback.');
-        return createLocalUserSession(username.trim());
-      }
+      if (isNetworkError(err)) throw new Error(OFFLINE_MESSAGE);
       throw err;
     }
-  }, []);
 
-  const requestOTP = useCallback(async (email) => {
-    const cleanEmail = email.trim();
-    try {
-      const res = await fetch(`${API}/auth/request-otp/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to send login OTP.');
-      }
-      return data;
-    } catch (err) {
-      if (err.name === 'TypeError' || (err.message && err.message.includes('fetch'))) {
-        console.warn('Backend API unreachable for OTP request, generating local dev code.');
-        const devOtp = '123456';
-        return {
-          message: 'Login OTP code generated (Dev Mode). Use code: 123456',
-          dev_otp: devOtp,
-          is_mocked: true,
-          email: cleanEmail,
-        };
-      }
-      throw err;
+    if (!response.ok) {
+      throw new Error(await readError(response, fallbackMessage));
     }
+    return response.json();
   }, []);
 
-  const loginWithOTP = useCallback(async (email, otp) => {
-    const cleanEmail = email.trim();
-    const cleanOtp = otp.trim();
-    try {
-      const res = await fetch(`${API}/auth/otp-login/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cleanEmail, otp: cleanOtp }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Invalid OTP code.');
-      }
+  const login = useCallback(
+    async (username, password) => {
+      const data = await authRequest(
+        '/auth/login/',
+        { username: username.trim(), password },
+        'Sign-in failed. Check your details and try again.',
+      );
+      return { user: persistSession(data.token, data.user) };
+    },
+    [authRequest, persistSession],
+  );
 
-      localStorage.setItem('cs_token', data.token);
-      setToken(data.token);
+  const requestOTP = useCallback(
+    async (email) =>
+      authRequest(
+        '/auth/request-otp/',
+        { email: email.trim() },
+        "Couldn't send a sign-in code. Try again in a moment.",
+      ),
+    [authRequest],
+  );
 
-      const loggedUser = {
-        ...data.user,
-        role: data.user.role || (data.user.is_superuser || data.user.is_staff ? 'admin' : 'customer'),
-      };
-      setUser(loggedUser);
-      localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-      return { user: loggedUser };
-    } catch (err) {
-      if (err.name === 'TypeError' || (err.message && err.message.includes('fetch')) || cleanOtp === '123456') {
-        console.warn('Verifying local session with OTP.');
-        return createLocalUserSession(cleanEmail);
-      }
-      throw err;
-    }
-  }, []);
+  const loginWithOTP = useCallback(
+    async (email, otp) => {
+      const data = await authRequest(
+        '/auth/otp-login/',
+        { email: email.trim(), otp: otp.trim() },
+        'That code was not accepted.',
+      );
+      return { user: persistSession(data.token, data.user) };
+    },
+    [authRequest, persistSession],
+  );
 
-  const googleLogin = useCallback(async (credential) => {
-    const res = await fetch(`${API}/auth/google-login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Google authentication failed.');
-    }
+  const googleLogin = useCallback(
+    async (credential) => {
+      const data = await authRequest(
+        '/auth/google-login/',
+        { credential },
+        'Google sign-in failed.',
+      );
+      return { user: persistSession(data.token, data.user) };
+    },
+    [authRequest, persistSession],
+  );
 
-    localStorage.setItem('cs_token', data.token);
-    setToken(data.token);
-    
-    const loggedUser = {
-      ...data.user,
-      role: data.user.role || (data.user.is_superuser || data.user.is_staff ? 'admin' : 'customer')
-    };
-    setUser(loggedUser);
-    localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-    return { user: loggedUser };
-  }, []);
+  const microsoftLogin = useCallback(
+    async (credential) => {
+      const data = await authRequest(
+        '/auth/microsoft-login/',
+        { credential },
+        'Microsoft sign-in failed.',
+      );
+      return { user: persistSession(data.token, data.user) };
+    },
+    [authRequest, persistSession],
+  );
 
-  const microsoftLogin = useCallback(async (credential) => {
-    const res = await fetch(`${API}/auth/microsoft-login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Microsoft authentication failed.');
-    }
+  const adminLogin = useCallback(
+    async (email, authKey) => {
+      const data = await authRequest(
+        '/auth/admin-login/',
+        { email: email.trim(), auth_key: authKey.trim() },
+        'Administrator sign-in failed.',
+      );
+      // The admin flags come from the server's response. The old code forced
+      // `is_staff` and `is_superuser` to true on the client regardless of what
+      // the server said, so the admin UI rendered for anyone who got a 200
+      // back from this endpoint.
+      return { user: persistSession(data.token, data.user) };
+    },
+    [authRequest, persistSession],
+  );
 
-    localStorage.setItem('cs_token', data.token);
-    setToken(data.token);
+  const register = useCallback(
+    async (username, email, password, confirmPassword) => {
+      // No `role` is sent. The server ignores it now, but a client that keeps
+      // sending one invites the next person to re-add the branch that read it.
+      const data = await authRequest(
+        '/auth/register/',
+        { username, email, password, confirm_password: confirmPassword },
+        'Registration failed.',
+      );
+      return persistSession(data.token, data.user);
+    },
+    [authRequest, persistSession],
+  );
 
-    const loggedUser = {
-      ...data.user,
-      role: data.user.role || (data.user.is_superuser || data.user.is_staff ? 'admin' : 'customer')
-    };
-    setUser(loggedUser);
-    localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-    return { user: loggedUser };
-  }, []);
-
-  const adminLogin = useCallback(async (email, auth_key) => {
-    try {
-      const res = await fetch(`${API}/auth/admin-login/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, auth_key }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Admin authentication failed.');
-      }
-
-      localStorage.setItem('cs_token', data.token);
-      setToken(data.token);
-      
-      const loggedUser = {
-        ...data.user,
-        role: 'admin',
-        is_staff: true,
-        is_superuser: true
-      };
-      setUser(loggedUser);
-      localStorage.setItem('cs_user', JSON.stringify(loggedUser));
-      return { user: loggedUser };
-    } catch (err) {
-      if (err.name === 'TypeError' || (err.message && err.message.includes('fetch'))) {
-        console.warn('Backend API server unreachable, activating local admin session fallback.');
-        return createLocalUserSession(email.trim(), 'admin');
-      }
-      throw err;
-    }
-  }, []);
-
-  const register = useCallback(async (username, email, password, confirm_password, role = 'customer') => {
-    const res = await fetch(`${API}/auth/register/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email, password, confirm_password, role }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || data.detail || 'Registration failed.');
-    }
-    localStorage.setItem('cs_token', data.token);
-    setToken(data.token);
-    const newUser = {
-      ...data.user,
-      role: data.user.role || role
-    };
-    setUser(newUser);
-    localStorage.setItem('cs_user', JSON.stringify(newUser));
-    return newUser;
-  }, []);
+  const isAdmin = Boolean(user?.is_admin);
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      setUser,
-      token,
-      setToken,
-      loading,
-      login,
-      requestOTP,
-      loginWithOTP,
-      googleLogin,
-      microsoftLogin,
-      adminLogin,
-      register,
-      logout,
-      isAdmin: user?.role === 'admin' || user?.is_superuser || user?.is_staff,
-      isEnterprise: user?.role === 'enterprise' || user?.role === 'admin' || user?.is_superuser,
-      isCustomer: !!user,
-    }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        setUser,
+        token,
+        setToken,
+        loading,
+        sessionNotice,
+        dismissSessionNotice: () => setSessionNotice(null),
+        login,
+        requestOTP,
+        loginWithOTP,
+        googleLogin,
+        microsoftLogin,
+        adminLogin,
+        register,
+        logout,
+        isAdmin,
+        isEnterprise: isAdmin || user?.role === 'enterprise',
+        isCustomer: Boolean(user),
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used inside an AuthProvider.');
+  }
+  return context;
 }
 
+export default AuthContext;

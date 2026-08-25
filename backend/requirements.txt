@@ -14,6 +14,9 @@ daphne>=4.1.0
 # the Channels WebSockets share one process. A WSGI server such as gunicorn
 # would serve the API but silently drop every WebSocket connection.
 whitenoise>=6.6.0             # Static file serving without a separate web server
+# Encrypts credentials that must be stored recoverably — Twilio auth tokens,
+# OAuth refresh tokens, customer-supplied API keys. See api/crypto.py.
+cryptography>=42.0.0
 # Verifies outbound TLS with the OS trust store. Needed because some upstreams
 # (cisa.gov) serve an incomplete cert chain that OpenSSL cannot complete on its
 # own — see the TLS trust note in settings.py. Requires Python >= 3.10.

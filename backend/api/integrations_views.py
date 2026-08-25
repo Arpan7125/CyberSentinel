@@ -1,6 +1,9 @@
-import re
-import requests
 import base64
+import logging
+import re
+
+import phonenumbers
+import requests
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -8,8 +11,16 @@ from django.conf import settings
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
+from .crypto import mask
 from .models import ScanLog
 from .ml_classifier import classifier
+from .throttles import SmsThrottle
+
+logger = logging.getLogger('api')
+
+#: Requests to third parties always get a deadline. Without one a slow or
+#: hanging upstream pins a worker process until the platform kills it.
+UPSTREAM_TIMEOUT = 10
 
 # Attempt Google API client imports
 try:
@@ -21,39 +32,61 @@ except ImportError:
 
 
 class UserIntegrationView(APIView):
-    """GET or UPDATE the current user's integration settings stored in the database."""
-    authentication_classes = [TokenAuthentication]
+    """Read or update the current user's integration settings.
+
+    Credentials are write-only. The GET response reports whether each one is
+    configured and shows a masked suffix so the user can tell which key is
+    stored, but never returns the value — sending a customer's Twilio token or
+    OpenAI key back down the wire would undo encrypting it at rest, and put it
+    in browser memory, logs, and any proxy in between.
+    """
+
     permission_classes = [IsAuthenticated]
+
+    #: (field name, whether the value is secret)
+    FIELDS = [
+        ('gmail_client_id', False),
+        ('twilio_sid', False),
+        ('twilio_from', False),
+        ('twilio_to', False),
+        ('gmail_access_token', True),
+        ('twilio_token', True),
+        ('openai_api_key', True),
+        ('virustotal_api_key', True),
+    ]
 
     def get(self, request):
         from .models import UserIntegration
         config, _ = UserIntegration.objects.get_or_create(user=request.user)
-        return Response({
-            'gmail_client_id': config.gmail_client_id,
-            'gmail_access_token': config.gmail_access_token,
-            'twilio_sid': config.twilio_sid,
-            'twilio_token': config.twilio_token,
-            'twilio_from': config.twilio_from,
-            'twilio_to': config.twilio_to,
-            'openai_api_key': config.openai_api_key,
-            'virustotal_api_key': config.virustotal_api_key,
-        }, status=status.HTTP_200_OK)
+
+        payload = {}
+        for name, is_secret in self.FIELDS:
+            value = getattr(config, name) or ''
+            if is_secret:
+                payload[name] = mask(value)
+                payload[f'{name}_configured'] = bool(value)
+            else:
+                payload[name] = value
+        return Response(payload, status=status.HTTP_200_OK)
 
     def post(self, request):
         from .models import UserIntegration
         config, _ = UserIntegration.objects.get_or_create(user=request.user)
-        
-        config.gmail_client_id = request.data.get('gmail_client_id', '').strip()
-        config.gmail_access_token = request.data.get('gmail_access_token', '').strip()
-        config.twilio_sid = request.data.get('twilio_sid', '').strip()
-        config.twilio_token = request.data.get('twilio_token', '').strip()
-        config.twilio_from = request.data.get('twilio_from', '').strip()
-        config.twilio_to = request.data.get('twilio_to', '').strip()
-        config.openai_api_key = request.data.get('openai_api_key', '').strip()
-        config.virustotal_api_key = request.data.get('virustotal_api_key', '').strip()
-        
+
+        for name, is_secret in self.FIELDS:
+            if name not in request.data:
+                # Absent means "leave alone". The previous version defaulted
+                # every missing key to '' and saved, so a partial update wiped
+                # whatever it did not mention.
+                continue
+            value = (request.data.get(name) or '').strip()
+            if is_secret and value.startswith('•'):
+                # The client echoed the masked placeholder back unchanged.
+                continue
+            setattr(config, name, value[:2000])
+
         config.save()
-        return Response({'message': 'Integrations config saved successfully.'}, status=status.HTTP_200_OK)
+        return Response({'message': 'Integration settings saved.'}, status=status.HTTP_200_OK)
 
 
 def sync_gmail_real(user, access_token):
@@ -132,22 +165,22 @@ def sync_gmail_real(user, access_token):
 
 
 class GmailImportView(APIView):
-    """Import and scan real Gmail inbox messages. Requires a real connected Gmail
-    account (see oauth_views.OAuthCallbackView) — no simulated fallback."""
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    """Import and scan the signed-in user's Gmail inbox.
+
+    The access token comes from the user's own stored connection and nowhere
+    else. It used to be accepted from the request body on an unauthenticated
+    endpoint, which let anyone drive Gmail API traffic through this server with
+    a token of their choosing — and meant the auth check the test suite expects
+    never happened.
+    """
+
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        user = request.user if request.user and request.user.is_authenticated else None
-        access_token = request.data.get('access_token', '').strip()
-
-        if not access_token and user:
-            from .models import UserIntegration
-            try:
-                config = UserIntegration.objects.get(user=user)
-                access_token = config.gmail_access_token
-            except UserIntegration.DoesNotExist:
-                pass
+        user = request.user
+        from .models import UserIntegration
+        config, _ = UserIntegration.objects.get_or_create(user=user)
+        access_token = config.gmail_access_token
 
         if not access_token:
             return Response({
@@ -168,96 +201,128 @@ class GmailImportView(APIView):
 
 
 class SmsDispatchView(APIView):
-    """Dispatch SMS warnings using Twilio or simulated console printout, and log in DB."""
+    """Send an SMS warning to a number the user has configured.
+
+    This endpoint used to take an arbitrary body and an arbitrary destination
+    with no validation and no dedicated rate limit, which under the default
+    1000/hour user allowance made it a thousand-messages-an-hour smishing relay
+    running on the platform's own Twilio credit. It now requires
+    authentication, parses the destination as a real phone number, caps the
+    body, and has its own throttle scope.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [SmsThrottle]
+
+    MAX_BODY_CHARS = 480  # three concatenated GSM segments
 
     def post(self, request):
-        user = request.user if request.user and request.user.is_authenticated else None
-        message = request.data.get('message', '').strip()
-        to_number = request.data.get('to_number', '').strip()
-        
-        # Pull optional Twilio config
-        sid = request.data.get('twilio_sid', '').strip()
-        token = request.data.get('twilio_auth_token', '').strip()
-        from_number = request.data.get('twilio_from', '').strip()
+        user = request.user
+        message = (request.data.get('message') or '').strip()
+        to_number = (request.data.get('to_number') or '').strip()
 
-        # Check database config if authenticated
-        if user and (not sid or not token or not from_number):
-            from .models import UserIntegration
-            try:
-                config = UserIntegration.objects.get(user=user)
-                sid = sid or config.twilio_sid
-                token = token or config.twilio_token
-                from_number = from_number or config.twilio_from
-                to_number = to_number or config.twilio_to
-            except UserIntegration.DoesNotExist:
-                pass
+        from .models import UserIntegration
+        config, _ = UserIntegration.objects.get_or_create(user=user)
 
-        if not message or not to_number:
-            return Response({'error': 'Message body and target number are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Twilio credentials come from the user's stored config only. Accepting
+        # them from the request body let a caller drive someone else's Twilio
+        # account through our server, and put live credentials in request logs.
+        sid = config.twilio_sid
+        token = config.twilio_token
+        from_number = config.twilio_from
+        to_number = to_number or config.twilio_to
 
-        # Run risk analysis on outbound SMS to log it
+        if not message:
+            return Response({'error': 'Message body is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if len(message) > self.MAX_BODY_CHARS:
+            return Response(
+                {'error': f'Message is too long. Keep it under {self.MAX_BODY_CHARS} characters.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        if not to_number:
+            return Response({'error': 'A destination number is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            parsed = phonenumbers.parse(to_number, None)
+            if not phonenumbers.is_valid_number(parsed):
+                raise phonenumbers.NumberParseException(0, 'invalid')
+            to_number = phonenumbers.format_number(
+                parsed, phonenumbers.PhoneNumberFormat.E164)
+        except phonenumbers.NumberParseException:
+            return Response(
+                {'error': 'Enter the destination in international format, e.g. +14155550123.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        # The destination stays user-chosen — sending an alert to a colleague is
+        # the feature. What made this an open relay was the combination of no
+        # authentication, no number validation, no rate limit, and credentials
+        # accepted from the request body. All four are closed above: the caller
+        # is authenticated, the number must parse, SmsThrottle caps the endpoint
+        # at 20/hour, and the Twilio account billed is the user's own.
+
         analysis = classifier.analyze_text(message)
-        
+
         log_entry = ScanLog.objects.create(
             user=user,
-            scan_type='TEXT', # Log as SMS/Text channel
+            scan_type='TEXT',
             input_content=message,
             sender='SYSTEM ALERT',
             subject=f"ALERT TO {to_number}",
             risk_score=analysis["risk_score"],
-            risk_level=analysis["risk_level"]
+            risk_level=analysis["risk_level"],
         )
 
-        sms_dispatched = False
+        if not (sid and token and from_number):
+            return Response({
+                'error': 'SMS alerts are not configured. Add your Twilio SID, auth token, and '
+                         'sending number in Settings → Integrations.',
+                'is_configured': False,
+            }, status=status.HTTP_400_BAD_REQUEST)
 
-        if sid and token and from_number:
-            try:
-                # Basic Auth for Twilio API
-                url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
-                payload = {
-                    'From': from_number,
-                    'To': to_number,
-                    'Body': message
-                }
-                res = requests.post(url, data=payload, auth=(sid, token))
-                if res.status_code in [200, 201]:
-                    sms_dispatched = True
-                else:
-                    print(f"[TWILIO ERROR RESPONSE] Code: {res.status_code} | Body: {res.text}")
-            except Exception as e:
-                print(f"[TWILIO DISPATCH EXCEPTION] {str(e)}")
+        try:
+            res = requests.post(
+                f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json",
+                data={'From': from_number, 'To': to_number, 'Body': message},
+                auth=(sid, token),
+                timeout=UPSTREAM_TIMEOUT,
+            )
+        except requests.RequestException:
+            logger.exception('Twilio dispatch failed for user %s', user.id)
+            return Response({'error': "Couldn't reach Twilio. The alert was logged but not sent."},
+                            status=status.HTTP_502_BAD_GATEWAY)
 
-        if not sms_dispatched:
-            # Simulated debug printout
-            print(f"\n[DEV MOCK SMS INTERACTION]")
-            print(f"==================================================")
-            print(f"TO TARGET: {to_number}")
-            print(f"SMS ALERT MESSAGE PAYLOAD:")
-            print(f"{message}")
-            print(f"==================================================\n")
+        if res.status_code not in (200, 201):
+            logger.warning('Twilio rejected message for user %s: %s %s',
+                           user.id, res.status_code, res.text[:300])
+            return Response({'error': 'Twilio rejected the message. Check your sending number '
+                                      'and account status.'},
+                            status=status.HTTP_502_BAD_GATEWAY)
 
         return Response({
-            'message': 'SMS dispatched successfully via Twilio.' if sms_dispatched else 'SMS alert logged (Simulated Dispatch Mode).',
-            'is_mocked': not sms_dispatched,
+            'message': 'SMS alert sent.',
             'details': {
                 'id': log_entry.id,
                 'to': to_number,
-                'content': message,
                 'risk_level': log_entry.risk_level,
-                'risk_score': log_entry.risk_score
+                'risk_score': log_entry.risk_score,
             }
         }, status=status.HTTP_200_OK)
 
 
 class GmailReplyDraftView(APIView):
-    """Generate an AI reply draft based on phishing risk analysis results."""
-    
+    """Generate a reply draft from a phishing risk analysis."""
+
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
-        original_sender = request.data.get('original_sender', 'Unknown').strip()
-        original_subject = request.data.get('original_subject', 'No Subject').strip()
-        original_body = request.data.get('original_body', '').strip()
-        threat_level = request.data.get('threat_level', 'Low').strip()
-        reply_style = request.data.get('reply_style', 'defensive').strip()
+        original_sender = (request.data.get('original_sender') or 'Unknown').strip()[:255]
+        original_subject = (request.data.get('original_subject') or 'No Subject').strip()[:255]
+        original_body = (request.data.get('original_body') or '').strip()[:5000]
+        threat_level = (request.data.get('threat_level') or 'Low').strip()[:20]
+        reply_style = (request.data.get('reply_style') or 'defensive').strip()[:20]
 
         draft = ""
 

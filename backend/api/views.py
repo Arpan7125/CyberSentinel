@@ -1,3 +1,6 @@
+import logging
+
+from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -6,10 +9,68 @@ from rest_framework.permissions import AllowAny
 from .models import ScanLog, QuizQuestion
 from .serializers import ScanLogSerializer, QuizQuestionSerializer
 from .ml_classifier import classifier
-from .url_analyzer import analyze_url
+from .url_analyzer import analyze_url, validate_url_shape
 from .ocr_processor import extract_text_from_image
 from .dashboard_utils import compute_dashboard_stats
 from .throttles import SCAN_THROTTLES
+
+logger = logging.getLogger('api')
+
+#: Longest text the classifier will accept. Django's DATA_UPLOAD_MAX_MEMORY_SIZE
+#: would allow ten megabytes through, which is a denial-of-service against the
+#: ML pipeline rather than a scan anyone meant to run.
+MAX_TEXT_CHARS = getattr(settings, 'MAX_SCAN_TEXT_CHARS', 20000)
+
+#: Content types the screenshot scanner will decode. Checking the browser's
+#: declared type is not sufficient on its own — the pixel decode below is what
+#: actually proves the bytes are an image — but it rejects the obvious cases
+#: before any decoding happens.
+ALLOWED_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/webp', 'image/tiff', 'image/bmp'}
+
+#: Hard ceiling for any uploaded artefact.
+MAX_UPLOAD_BYTES = getattr(settings, 'MAX_UPLOAD_BYTES', 10 * 1024 * 1024)
+
+
+def verify_image_bytes(image_file):
+    """Prove the upload really decodes as an image, and is not a decompression bomb.
+
+    Returns an error string, or None when the file is usable. Pillow's `verify`
+    parses the header without materialising the pixels, so a declared
+    50,000 x 50,000 PNG is rejected on its dimensions rather than after
+    allocating several gigabytes of bitmap.
+    """
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover - Pillow is a hard dependency
+        return None
+
+    # Roughly 80 megapixels: comfortably above any real screenshot, far below
+    # what it takes to exhaust a worker.
+    max_pixels = 80_000_000
+    previous_limit = Image.MAX_IMAGE_PIXELS
+    Image.MAX_IMAGE_PIXELS = max_pixels
+
+    try:
+        image_file.seek(0)
+        with Image.open(image_file) as probe:
+            fmt = (probe.format or '').upper()
+            width, height = probe.size
+            probe.verify()
+    except Exception:
+        return ("That file isn't a readable image. Upload a PNG, JPEG, WebP, TIFF, "
+                "or BMP screenshot.")
+    finally:
+        Image.MAX_IMAGE_PIXELS = previous_limit
+        image_file.seek(0)
+
+    if fmt not in {'PNG', 'JPEG', 'WEBP', 'TIFF', 'BMP', 'MPO'}:
+        return ("That image format isn't supported. Upload a PNG, JPEG, WebP, TIFF, "
+                "or BMP screenshot.")
+
+    if width * height > max_pixels:
+        return "That image is too large to process. Crop it and try again."
+
+    return None
 
 
 class TextAnalysisView(APIView):
@@ -20,8 +81,16 @@ class TextAnalysisView(APIView):
 
     def post(self, request):
         text = request.data.get("text", "")
-        if not text:
-            return Response({"error": "Content text is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not isinstance(text, str) or not text.strip():
+            return Response({"error": "Enter the message text you want scanned."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if len(text) > MAX_TEXT_CHARS:
+            return Response(
+                {"error": f"That message is too long to scan. Keep it under "
+                          f"{MAX_TEXT_CHARS:,} characters."},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         
         result = classifier.analyze_text(text)
         
@@ -44,9 +113,23 @@ class UrlAnalysisView(APIView):
 
     def post(self, request):
         url = request.data.get("url", "")
-        if not url:
-            return Response({"error": "URL link is required"}, status=status.HTTP_400_BAD_REQUEST)
-        
+
+        if not isinstance(url, str) or not url.strip():
+            return Response({"error": "Enter the link you want checked."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        url = url.strip()
+        if len(url) > 2048:
+            return Response({"error": "That link is too long to check."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Refuse input that is not a web address rather than scoring it. The old
+        # behaviour ran anything through the analyser, so "hello world" came back
+        # with a risk score and a reassuring verdict — worse than no answer.
+        shape_error = validate_url_shape(url)
+        if shape_error:
+            return Response({"error": shape_error}, status=status.HTTP_400_BAD_REQUEST)
+
         result = analyze_url(url)
         
         user = request.user if request.user and request.user.is_authenticated else None
@@ -69,11 +152,28 @@ class ScreenshotAnalysisView(APIView):
     def post(self, request):
         image_file = request.FILES.get("image", None)
         if not image_file:
-            return Response({"error": "Screenshot image file is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Choose a screenshot to scan."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        # Basic validation
-        if not image_file.name.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.tiff', '.bmp')):
-            return Response({"error": "Unsupported image format"}, status=status.HTTP_400_BAD_REQUEST)
+        # A filename extension is a claim by the client, not evidence. This view
+        # previously trusted `name.endswith(...)` and nothing else, so any file
+        # renamed to .png reached the decoder, and nothing capped the size at all
+        # — an image bomb was a one-request outage.
+        if image_file.size > MAX_UPLOAD_BYTES:
+            return Response(
+                {"error": f"That image is larger than the "
+                          f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit."},
+                status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+
+        declared_type = (getattr(image_file, 'content_type', '') or '').lower().split(';')[0]
+        if declared_type and declared_type not in ALLOWED_IMAGE_TYPES:
+            return Response({"error": "That file type isn't supported. Upload a PNG, JPEG, "
+                                      "WebP, TIFF, or BMP screenshot."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        format_error = verify_image_bytes(image_file)
+        if format_error:
+            return Response({"error": format_error}, status=status.HTTP_400_BAD_REQUEST)
 
         # Temporary save image to read it (Django handles in-memory vs temporary files)
         try:
@@ -134,8 +234,13 @@ class ScreenshotAnalysisView(APIView):
                 "associated_url_analysis": url_result
             }
             return Response(response_data, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": f"Failed to process image OCR: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception:
+            # The exception text can carry library internals and file paths, so
+            # it goes to the log and never to the caller.
+            logger.exception('Screenshot OCR failed')
+            return Response({"error": "We couldn't read text from that image. Try a clearer "
+                                      "screenshot, or paste the message text instead."},
+                            status=status.HTTP_502_BAD_GATEWAY)
 
 
 class DashboardStatsView(APIView):
@@ -242,37 +347,7 @@ from .models import ScamReport
 logger = logging.getLogger(__name__)
 
 # Uploads are hashed in a streaming fashion, but still bounded so a single
-# request cannot exhaust a worker.
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-
-
-def _vt_threat_label(vt_data, malicious):
-    """Prefer the malware family names the engines actually assigned over the
-    file's own (attacker-chosen) name."""
-    results = vt_data.get("last_analysis_results", {}) or {}
-    names = [
-        r.get("result") for r in results.values()
-        if r.get("category") == "malicious" and r.get("result")
-    ]
-    if names:
-        # The most frequently assigned label is the most reliable family name.
-        top = max(set(names), key=names.count)
-        return f"{top} ({malicious} engines)"
-    return f"Malware detected ({malicious} engines)"
-
-
-def _virustotal_key(user):
-    """A user's own VirusTotal key takes precedence over the platform key, so a
-    customer can use their own quota. Returns '' when neither is configured."""
-    if user is not None and user.is_authenticated:
-        try:
-            from .models import UserIntegration
-            config = UserIntegration.objects.filter(user=user).first()
-            if config and config.virustotal_api_key.strip():
-                return config.virustotal_api_key.strip()
-        except Exception:
-            logger.exception("Could not read the user's VirusTotal key; using the platform key")
-    return settings.VIRUSTOTAL_API_KEY
+# request cannot exhaust a worker (see MAX_UPLOAD_BYTES at the top of this module).
 
 
 class FileAnalysisView(APIView):
@@ -282,7 +357,12 @@ class FileAnalysisView(APIView):
     def post(self, request):
         file_obj = request.FILES.get("file", None)
         if not file_obj:
-            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "Choose a file to scan."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if not file_obj.size:
+            return Response({"error": "That file is empty."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         if file_obj.size > MAX_UPLOAD_BYTES:
             return Response(

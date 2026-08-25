@@ -12,12 +12,12 @@ class TicketViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # Admins get all tickets, regular customers get only their own
-        try:
-            if user.profile.role == 'admin' or user.is_superuser:
-                return SupportTicket.objects.all()
-        except AttributeError:
-            pass
+        # Admins get all tickets, regular customers get only their own.
+        # `is_staff` is included so this agrees with the IsAdmin permission
+        # class — an admin without a profile row used to be scoped to their own
+        # tickets while still passing the admin-only actions below.
+        if user.is_staff or user.is_superuser or getattr(getattr(user, 'profile', None), 'role', '') == 'admin':
+            return SupportTicket.objects.all()
         return SupportTicket.objects.filter(customer=user)
 
     def perform_create(self, serializer):
@@ -26,28 +26,31 @@ class TicketViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsCustomer])
     def reply(self, request, pk=None):
         ticket = self.get_object()
-        content = request.data.get('content')
-        is_internal = request.data.get('is_internal', False)
+        content = (request.data.get('content') or '').strip()
+        wants_internal = bool(request.data.get('is_internal', False))
 
         if not content:
-            return Response({'error': 'Reply content is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Reply content is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Enforce internal note permissions
-        if is_internal:
-            try:
-                if request.user.profile.role != 'admin' and not request.user.is_superuser:
-                    return Response({'error': 'Permission denied for internal notes'}, status=status.HTTP_403_FORBIDDEN)
-            except AttributeError:
-                if not request.user.is_superuser:
-                    return Response({'error': 'Permission denied for internal notes'}, status=status.HTTP_403_FORBIDDEN)
+        if len(content) > 10000:
+            return Response({'error': 'Reply is too long. Keep it under 10,000 characters.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        is_staff = (request.user.is_staff or request.user.is_superuser
+                    or getattr(getattr(request.user, 'profile', None), 'role', '') == 'admin')
+
+        if wants_internal and not is_staff:
+            return Response({'error': 'Only staff can add internal notes.'},
+                            status=status.HTTP_403_FORBIDDEN)
 
         reply = TicketReply.objects.create(
             ticket=ticket,
             sender=request.user,
             content=content,
-            is_internal=is_internal
+            is_internal=wants_internal and is_staff,
         )
-        return Response(TicketReplySerializer(reply).data, status=status.HTTP_201_CREATED)
+        return Response(TicketReplySerializer(reply, context={'request': request}).data,
+                        status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def assign(self, request, pk=None):
@@ -61,6 +64,6 @@ class TicketViewSet(viewsets.ModelViewSet):
             assignee = User.objects.get(id=assignee_id)
             ticket.assignee = assignee
             ticket.save()
-            return Response(SupportTicketSerializer(ticket).data)
+            return Response(SupportTicketSerializer(ticket, context={'request': request}).data)
         except User.DoesNotExist:
             return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)

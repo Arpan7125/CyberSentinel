@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { securityService } from '../../services/api';
+import { useAuth } from '../../AuthContext';
 
 export default function SecurityPage() {
   const [apiKeys, setApiKeys] = useState([]);
@@ -7,6 +8,9 @@ export default function SecurityPage() {
   const [loginHistory, setLoginHistory] = useState([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [generatedKey, setGeneratedKey] = useState('');
+  const [error, setError] = useState('');
+  const [confirmingRevoke, setConfirmingRevoke] = useState(null);
+  const { logout } = useAuth();
 
   const loadAll = useCallback(async () => {
     try {
@@ -34,7 +38,7 @@ export default function SecurityPage() {
       setApiKeys((prev) => [res.key, ...prev]);
       setNewKeyName('');
     } catch (err) {
-      alert(err.data?.error || err.message || 'Failed to generate API key.');
+      setError(err.message || 'Failed to generate API key.');
     }
   };
 
@@ -43,25 +47,68 @@ export default function SecurityPage() {
       await securityService.revokeApiKey(id);
       setApiKeys((prev) => prev.filter((k) => k.id !== id));
     } catch (err) {
-      alert(err.data?.error || err.message || 'Failed to revoke key.');
+      setError(err.message || 'Failed to revoke key.');
     }
   };
 
+  /**
+   * Revoking a session now genuinely ends it, which — because a single token
+   * backs every device — means signing out everywhere, including here. The
+   * confirmation step exists so that is a choice rather than a surprise; the
+   * old button only hid the row from a list and left the device working.
+   */
   const handleRevokeSession = async (id) => {
+    setError('');
     try {
       await securityService.revokeSession(id);
       setSessions((prev) => prev.filter((s) => s.id !== id));
+      await logout();
     } catch (err) {
-      alert(err.data?.error || err.message || 'Failed to revoke session.');
+      setError(err.message || 'Failed to revoke that session.');
+    } finally {
+      setConfirmingRevoke(null);
     }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
-        <h1 className="page-title">Security & Access</h1>
+        <h1 className="page-title">Security &amp; Access</h1>
         <p className="page-subtitle">Manage device authorizations, threat audit history logs, and developer integrations</p>
       </div>
+
+      {error && (
+        <p className="field-error" role="alert"><span>{error}</span></p>
+      )}
+
+      {confirmingRevoke !== null && (
+        <div className="glass-card" role="alertdialog" aria-labelledby="revoke-heading" style={{ padding: 24 }}>
+          <h3 id="revoke-heading" className="section-title" style={{ marginBottom: 8 }}>
+            Sign out of this device?
+          </h3>
+          <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20, lineHeight: 1.6 }}>
+            Your account uses one access token across all devices, so revoking this
+            session signs you out everywhere &mdash; including here. You&rsquo;ll need to
+            sign in again. This is the right move if you think someone else has access.
+          </p>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button
+              type="button"
+              className="btn-pub btn-pub-primary"
+              onClick={() => handleRevokeSession(confirmingRevoke)}
+            >
+              Sign out everywhere
+            </button>
+            <button
+              type="button"
+              className="btn-pub btn-pub-ghost"
+              onClick={() => setConfirmingRevoke(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Developer API Keys widget */}
       <div className="glass-card" style={{ padding: 28 }}>
@@ -181,7 +228,7 @@ export default function SecurityPage() {
                       <button
                         className="btn-pub btn-pub-secondary btn-pub-sm"
                         style={{ color: 'var(--accent-red)' }}
-                        onClick={() => handleRevokeSession(sess.id)}
+                        onClick={() => setConfirmingRevoke(sess.id)}
                       >
                         Terminate
                       </button>

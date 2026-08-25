@@ -1,32 +1,60 @@
 import React, { useState } from 'react';
 import { UploadCloud, Image as ImageIcon, AlertTriangle, CheckCircle, Shield } from 'lucide-react';
 import { scanService } from '../../services/api';
+import {
+  ACCEPTED_IMAGE_TYPES,
+  IMAGE_ACCEPT_ATTRIBUTE,
+  MAX_UPLOAD_BYTES,
+  formatBytes,
+  validateUpload,
+} from '../../utils/validation';
 import '../../assets/analyzer.css';
 
 export default function ScreenshotAnalyzerPage() {
   const [file, setFile] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  /**
+   * Accept a chosen file only if it is plausibly a readable image of a workable
+   * size. The server verifies the bytes properly with Pillow — a filename or a
+   * declared MIME type is a claim, not proof — but checking here means the user
+   * finds out immediately instead of after uploading ten megabytes.
+   */
+  const acceptFile = (chosen) => {
+    if (!chosen) return;
+    setResult(null);
+
+    const problem = validateUpload(chosen, {
+      maxBytes: MAX_UPLOAD_BYTES,
+      acceptTypes: ACCEPTED_IMAGE_TYPES,
+    });
+    if (problem) {
+      setError(problem);
+      setFile(null);
+      return;
+    }
+
+    setError('');
+    setFile(chosen);
+  };
 
   const handleFileDrop = (e) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
-      setResult(null);
-    }
+    acceptFile(e.dataTransfer.files?.[0]);
   };
 
   const handleFileSelect = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      setResult(null);
-    }
+    acceptFile(e.target.files?.[0]);
+    e.target.value = '';
   };
 
   const analyzeScreenshot = async () => {
     if (!file) return;
     setAnalyzing(true);
     setResult(null);
+    setError('');
 
     const formData = new FormData();
     formData.append('image', file);
@@ -45,7 +73,7 @@ export default function ScreenshotAnalyzerPage() {
         aiSummary: res.ai_summary || `OCR successfully extracted the text from the image. Threat assessment classified this content as ${res.risk_level} risk with a score of ${res.risk_score}%.`
       });
     } catch (err) {
-      alert(err.data?.error || err.message || 'Failed to analyze screenshot.');
+      setError(err.message || 'Failed to analyze that screenshot.');
     } finally {
       setAnalyzing(false);
     }
@@ -60,8 +88,26 @@ export default function ScreenshotAnalyzerPage() {
 
       <div className="analyzer-content">
         <div className="analyzer-input-card">
+          {error && (
+            <p className="field-error" role="alert" style={{ marginBottom: 16 }}>
+              <AlertTriangle size={15} aria-hidden="true" />
+              <span>{error}</span>
+            </p>
+          )}
+
           <div 
             className="file-drop-zone" 
+            role="button"
+            tabIndex={0}
+            aria-label="Choose a screenshot to analyze"
+            onKeyDown={(e) => {
+              // A div with a click handler is invisible to keyboard users
+              // without this.
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                document.getElementById('screenshot-upload').click();
+              }
+            }}
             onDragOver={(e) => e.preventDefault()} 
             onDrop={handleFileDrop}
             style={{ 
@@ -77,8 +123,9 @@ export default function ScreenshotAnalyzerPage() {
             <input 
               id="screenshot-upload" 
               type="file" 
-              accept="image/*" 
-              style={{ display: 'none' }} 
+              accept={IMAGE_ACCEPT_ATTRIBUTE}
+              className="visually-hidden"
+              aria-describedby="screenshot-upload-limit"
               onChange={handleFileSelect} 
             />
             
@@ -86,7 +133,7 @@ export default function ScreenshotAnalyzerPage() {
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
                 <ImageIcon size={48} color="var(--accent)" />
                 <div style={{ fontWeight: 600 }}>{file.name}</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{(file.size / 1024).toFixed(2)} KB</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{formatBytes(file.size)}</div>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
@@ -94,8 +141,12 @@ export default function ScreenshotAnalyzerPage() {
                   <UploadCloud size={32} color="#AF52DE" />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Drag & Drop Screenshot</h3>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Drag &amp; drop a screenshot</h3>
                   <p style={{ color: 'var(--text-secondary)', fontSize: 13 }}>or click to browse from your device</p>
+                  {/* State the limits up front rather than after a failed upload. */}
+                  <p id="screenshot-upload-limit" style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+                    PNG, JPEG, WebP, TIFF, or BMP &middot; up to {formatBytes(MAX_UPLOAD_BYTES)}
+                  </p>
                 </div>
               </div>
             )}

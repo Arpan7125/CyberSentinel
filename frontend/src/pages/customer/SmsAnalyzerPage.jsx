@@ -3,27 +3,38 @@ import { useNavigate } from 'react-router-dom';
 import { MessageSquare, ShieldAlert, AlertTriangle, CheckCircle, Smartphone, Database, Zap, Mail } from 'lucide-react';
 import InfoTooltip from '../../components/ui/InfoTooltip';
 import { scanService } from '../../services/api';
+import { MAX_SCAN_TEXT_CHARS, validateScanText } from '../../utils/validation';
 
 export default function SmsAnalyzerPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [inputText, setInputText] = useState('');
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
   const handlePasteClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
       if (text) setInputText(text);
-    } catch (err) {
-      alert("Unable to access clipboard. Please paste manually into the text box.");
+    } catch {
+      // Clipboard access is routinely denied by the browser; that is expected,
+      // not an error worth interrupting the user with a modal dialog.
+      setError('Clipboard access was blocked. Paste the message into the box instead.');
     }
   };
 
   const handleAnalyze = async (e) => {
     e.preventDefault();
-    if (!inputText) return;
+
+    const lengthError = validateScanText(inputText);
+    if (lengthError) {
+      setError(lengthError);
+      return;
+    }
+
     setAnalyzing(true);
     setResult(null);
+    setError('');
 
     try {
       const res = await scanService.analyzeText({ text: inputText });
@@ -40,8 +51,10 @@ export default function SmsAnalyzerPage() {
         ])
       });
     } catch (err) {
-      console.error(err);
-      alert('Failed to analyze SMS. Server might be offline.');
+      // The API layer already turned the status code into a message that says
+      // what actually happened — a rate limit and a server outage are not the
+      // same problem, and telling the user the wrong one wastes their time.
+      setError(err.message || 'Failed to analyze that message.');
     } finally {
       setAnalyzing(false);
     }
@@ -81,16 +94,29 @@ export default function SmsAnalyzerPage() {
         </div>
 
         <form onSubmit={handleAnalyze} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <label htmlFor="sms-input" className="visually-hidden">SMS message to analyze</label>
           <textarea 
+            id="sms-input"
             placeholder="Paste the SMS text here... (e.g. 'CHASE: Unusual login attempt. Click here to secure account: http://bit.ly/123')"
             value={inputText}
-            onChange={e => setInputText(e.target.value)}
+            onChange={e => { setInputText(e.target.value); if (error) setError(''); }}
+            maxLength={MAX_SCAN_TEXT_CHARS}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? 'sms-input-error' : undefined}
             style={{ 
               width: '100%', minHeight: 120, padding: 16, background: 'var(--bg-secondary)', 
               border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', 
               outline: 'none', resize: 'vertical', fontSize: 14, fontFamily: 'var(--font-mono)' 
             }}
           />
+
+          {error && (
+            <p id="sms-input-error" className="field-error" role="alert">
+              <AlertTriangle size={15} aria-hidden="true" />
+              <span>{error}</span>
+            </p>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}> We parse links safely in an isolated sandbox.</span>
             <button type="submit" className="btn-pub btn-pub-primary" disabled={analyzing || !inputText}>

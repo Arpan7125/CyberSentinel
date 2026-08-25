@@ -6,6 +6,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
+from rest_framework.authtoken.models import Token
+
 from .models import LoginHistory, DeviceSession, DeveloperApiKey
 from .serializers import LoginHistorySerializer, DeviceSessionSerializer, DeveloperApiKeySerializer
 
@@ -15,7 +17,7 @@ class LoginHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        history = LoginHistory.objects.filter(user=request.user)[:50]
+        history = LoginHistory.objects.filter(user=request.user).order_by('-timestamp')[:50]
         return Response(LoginHistorySerializer(history, many=True).data)
 
 
@@ -33,21 +35,47 @@ class DeviceSessionListView(APIView):
 
 
 class DeviceSessionRevokeView(APIView):
+    """Revoke a device session — and actually end it.
+
+    Setting `is_revoked` only removed the row from a list. Authentication is
+    token-based and the token was left untouched, so the "revoked" device kept
+    working indefinitely. Because a single DRF token backs every device, the
+    honest implementation is to drop the token, which signs out everywhere and
+    is what a user reaching for this button wants when they suspect a
+    compromise. The response says so explicitly rather than implying the other
+    devices are unaffected.
+    """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request, session_id):
         try:
             session = DeviceSession.objects.get(id=session_id, user=request.user)
         except DeviceSession.DoesNotExist:
-            return Response({'error': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Session not found.'}, status=status.HTTP_404_NOT_FOUND)
+
         session.is_revoked = True
-        session.save()
-        return Response({'message': 'Session revoked'})
+        session.save(update_fields=['is_revoked'])
+
+        DeviceSession.objects.filter(user=request.user).update(is_revoked=True)
+        Token.objects.filter(user=request.user).delete()
+
+        return Response({
+            'message': 'Session revoked. You have been signed out on every device — '
+                       'sign in again to continue.',
+            'signed_out_everywhere': True,
+        })
 
 
 class DeveloperApiKeyView(APIView):
-    """List/create real developer API keys. Full key is returned once, only on creation —
-    only its SHA-256 hash and a display prefix are ever stored."""
+    """List, create, and revoke developer API keys.
+
+    The full key is returned once, on creation; only its SHA-256 hash and a
+    display prefix are stored. Keys are presented to the API as
+    `Authorization: Api-Key <key>` and verified by
+    `api.authentication.DeveloperApiKeyAuthentication` — until that class
+    existed, a key issued here authenticated nothing at all.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -55,9 +83,13 @@ class DeveloperApiKeyView(APIView):
         return Response(DeveloperApiKeySerializer(keys, many=True).data)
 
     def post(self, request):
-        name = request.data.get('name', '').strip()
+        name = (request.data.get('name') or '').strip()[:150]
         if not name:
-            return Response({'error': 'Key name is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Key name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if DeveloperApiKey.objects.filter(user=request.user).count() >= 20:
+            return Response({'error': 'Key limit reached. Revoke an unused key first.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         raw_key = f"cs_live_{secrets.token_hex(24)}"
         key_hash = hashlib.sha256(raw_key.encode()).hexdigest()

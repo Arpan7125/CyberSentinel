@@ -10,6 +10,7 @@ export default function AccountSecurityPage() {
   const [providers, setProviders] = useState([]);
   const [showProviders, setShowProviders] = useState(false);
   const [loadingProvider, setLoadingProvider] = useState(null);
+  const [linkError, setLinkError] = useState('');
   const [managingAccount, setManagingAccount] = useState(null);
   const navigate = useNavigate();
 
@@ -48,6 +49,7 @@ export default function AccountSecurityPage() {
   }, []);
 
   const handleLinkAccount = async (providerId) => {
+    setLinkError('');
     setLoadingProvider(providerId);
     try {
       const res = await integrationsService.startOAuth(providerId);
@@ -55,7 +57,7 @@ export default function AccountSecurityPage() {
         window.location.href = res.auth_url; // Real external redirect (e.g. Google's consent screen).
       }
     } catch (err) {
-      alert(err.data?.error || err.message || "Failed to connect to authentication provider.");
+      setLinkError(err.message || "Couldn't start the connection. Try again.");
     } finally {
       setLoadingProvider(null);
     }
@@ -63,6 +65,9 @@ export default function AccountSecurityPage() {
 
   return (
     <div className="analyzer-page">
+      {linkError && (
+        <p className="field-error" role="alert"><span>{linkError}</span></p>
+      )}
       <div className="analyzer-header">
         <h1>Account & Identity Security</h1>
         <p>Monitor your connected accounts, manage active sessions, and secure your identity across the web.</p>

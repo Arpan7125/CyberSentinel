@@ -20,6 +20,83 @@ SUSPICIOUS_TLDS = {
     "xyz", "club", "info", "work", "click", "cc", "live", "top", "gq", "cf", "tk", "ml", "ga", "ru", "fit", "support", "online", "site", "website"
 }
 
+#: Schemes a link checker has any business being handed. Anything else is
+#: either not a web address at all (`javascript:`, `data:`) or something we
+#: cannot reason about, and is rejected outright rather than scored.
+ALLOWED_SCHEMES = {"http", "https"}
+
+#: Hostname label rules: letters, digits, and hyphens, not starting or ending
+#: with a hyphen, joined by dots, with a final label of at least two letters.
+_HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)"
+    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z]{2,63}$"
+)
+
+#: Dotted-quad, so an IP-literal host is accepted — those are a genuine phishing
+#: signal the analyser scores, not malformed input.
+_IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+
+def validate_url_shape(url_string):
+    """Reject input that is not a web address. Returns an error string or None.
+
+    `urlparse` never raises, so the analyser's "Malformed URL" branch was
+    unreachable and anything at all — including plain prose — came back with a
+    risk score and a set of recommendations. Returning a reassuring verdict for
+    input that was never a link is worse than returning nothing, so this runs
+    before any scoring happens.
+    """
+    candidate = (url_string or "").strip()
+    if not candidate:
+        return "Enter the link you want checked."
+
+    if any(ch.isspace() for ch in candidate):
+        return "That doesn't look like a link — web addresses don't contain spaces."
+
+    scheme = ""
+    if "://" in candidate:
+        scheme = candidate.split("://", 1)[0].lower()
+    elif ":" in candidate.split("/", 1)[0]:
+        head = candidate.split(":", 1)[0].lower()
+        # "example.com:8080" is a port, "javascript:alert(1)" is a scheme.
+        if not head.replace("-", "").replace(".", "").isalnum() or "." not in head:
+            scheme = head
+
+    if scheme and scheme not in ALLOWED_SCHEMES:
+        return f"Only http and https links can be checked, not '{scheme}:'."
+
+    to_parse = candidate if "://" in candidate else f"http://{candidate}"
+    parsed = urlparse(to_parse)
+
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if not host:
+        return "That doesn't look like a link. Include the site address, e.g. example.com/page."
+
+    if _IPV4_RE.match(host):
+        if any(int(part) > 255 for part in host.split(".")):
+            return "That IP address isn't valid."
+        return None
+
+    if "." not in host:
+        return ("That doesn't look like a full web address. Include the domain ending, "
+                "e.g. example.com.")
+
+    try:
+        host.encode("ascii")
+    except UnicodeEncodeError:
+        # An internationalised domain: convert to its ASCII form before matching.
+        try:
+            host = host.encode("idna").decode("ascii")
+        except UnicodeError:
+            return "That domain name isn't valid."
+
+    if not _HOSTNAME_RE.match(host):
+        return "That doesn't look like a valid web address. Check it for typos."
+
+    return None
+
+
 def analyze_url(url_string):
     # Ensure protocol is present for urlparse
     original_url = url_string.strip()

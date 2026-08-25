@@ -16,6 +16,11 @@
       "source": "/(.*)",
       "headers": [
         { "key": "X-Content-Type-Options", "value": "nosniff" },
+        {
+          "comment": "The auth token lives in localStorage, so a single XSS anywhere in the app would exfiltrate it. This policy is what stops injected markup from loading or reaching an attacker-controlled origin. 'unsafe-inline' on style-src is required by the inline style props still present in the components; remove it once those are migrated to classes. connect-src must list the API origin — update it if VITE_API_URL changes.",
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' https://accounts.google.com https://alcdn.msauth.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https://*.onrender.com https://accounts.google.com https://login.microsoftonline.com wss://*.onrender.com; frame-src https://accounts.google.com https://login.microsoftonline.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; upgrade-insecure-requests"
+        },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
@@ -25,7 +30,7 @@
         },
         {
           "key": "Strict-Transport-Security",
-          "value": "max-age=31536000; includeSubDomains"
+          "value": "max-age=31536000; includeSubDomains; preload"
         }
       ]
     },

@@ -2,19 +2,30 @@ import React, { useState } from 'react';
 import { CheckSquare, Globe, Lock, Unlock, AlertTriangle, Shield, Search } from 'lucide-react';
 import { scanService } from '../../services/api';
 import InfoTooltip from '../../components/ui/InfoTooltip';
+import { validateUrl } from '../../utils/validation';
 
 export default function UrlScannerPage() {
   const [urlInput, setUrlInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [checkedRecs, setCheckedRecs] = useState({});
+  const [error, setError] = useState('');
 
   const handleScan = async (e) => {
     e.preventDefault();
-    if (!urlInput.trim()) return;
+
+    // Check the shape before sending. Anything at all used to be accepted and
+    // scored, so a typo came back with a risk dial and a verdict.
+    const shapeError = validateUrl(urlInput);
+    if (shapeError) {
+      setError(shapeError);
+      setResult(null);
+      return;
+    }
 
     setLoading(true);
     setResult(null);
+    setError('');
 
     try {
       const res = await scanService.analyzeUrl({ url: urlInput.trim() });
@@ -27,8 +38,10 @@ export default function UrlScannerPage() {
       });
       setCheckedRecs({});
     } catch (err) {
-      console.error(err);
-      alert('Failed to analyze URL. Server might be down.');
+      // The API layer turns a status code into a message that says what
+      // actually happened. A blocking alert() reading "Server might be down"
+      // was wrong for a rate limit, a validation error, or an expired session.
+      setError(err.message || 'Failed to analyze that link.');
     } finally {
       setLoading(false);
     }
@@ -65,9 +78,13 @@ export default function UrlScannerPage() {
                 id="url-input"
                 type="text"
                 value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
+                onChange={(e) => { setUrlInput(e.target.value); if (error) setError(''); }}
                 placeholder="Enter URL (e.g. http://secure-paypal-login-update.com/signin)"
-                style={{ flex: 1, padding: '16px', background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', outline: 'none' }}
+                className="scanner-input"
+                aria-invalid={error ? 'true' : undefined}
+                aria-describedby={error ? 'url-input-error' : undefined}
+                autoComplete="url"
+                spellCheck="false"
                 required
               />
               
@@ -81,18 +98,27 @@ export default function UrlScannerPage() {
               </button>
             </div>
 
+            {/* role="alert" so a screen reader announces the problem the moment
+                it appears, rather than leaving it silently on screen. */}
+            {error && (
+              <p id="url-input-error" className="field-error" role="alert">
+                <AlertTriangle size={15} aria-hidden="true" />
+                <span>{error}</span>
+              </p>
+            )}
+
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700 }}>TRY A SAMPLE:</span>
               <button
                 type="button"
-                onClick={() => setUrlInput("https://www.paypal.com")}
+                onClick={() => { setUrlInput("https://www.paypal.com"); setError(''); }}
                 className="btn-pub btn-pub-ghost btn-pub-sm"
               >
                 Legitimate Site
               </button>
               <button
                 type="button"
-                onClick={() => setUrlInput("http://paypa1-security-verification.xyz/signin")}
+                onClick={() => { setUrlInput("http://paypa1-security-verification.xyz/signin"); setError(''); }}
                 className="btn-pub btn-pub-ghost btn-pub-sm"
                 style={{ color: '#EF4444', borderColor: 'rgba(239,68,68,0.3)' }}
               >

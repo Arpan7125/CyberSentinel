@@ -5,13 +5,14 @@ import { api } from '../../services/api';
 export default function NotificationsPage() {
   const { notifications, markAsRead, markAllAsRead, fetchNotifications } = useNotifications();
   const [filter, setFilter] = useState('All');
+  const [error, setError] = useState('');
 
   const handleDelete = async (id) => {
     try {
       await api.delete(`/notifications/${id}/`);
       fetchNotifications();
     } catch (err) {
-      alert(err.data?.error || err.message || 'Failed to delete notification.');
+      setError(err.message || "Couldn't delete that notification.");
     }
   };
 
@@ -21,6 +22,9 @@ export default function NotificationsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {error && (
+        <p className="field-error" role="alert"><span>{error}</span></p>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
         <div>
           <h1 className="page-title">Notification Center</h1>

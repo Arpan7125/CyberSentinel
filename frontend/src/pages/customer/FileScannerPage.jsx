@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, File, AlertTriangle, ShieldCheck, X } from 'lucide-react';
 import { scanService } from '../../services/api';
+import { MAX_UPLOAD_BYTES, formatBytes, validateUpload } from '../../utils/validation';
 
 export default function FileScannerPage() {
   const [file, setFile] = useState(null);
@@ -10,11 +11,23 @@ export default function FileScannerPage() {
   const fileInputRef = useRef(null);
 
   const handleFileChange = (e) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setFile(e.target.files[0]);
-      setResult(null);
-      setError('');
+    const chosen = e.target.files?.[0];
+    if (!chosen) return;
+
+    setResult(null);
+
+    // Check before uploading. Without this the user waits out the whole
+    // transfer only to be told by a 413 that it was never going to work.
+    const problem = validateUpload(chosen, { maxBytes: MAX_UPLOAD_BYTES });
+    if (problem) {
+      setError(problem);
+      setFile(null);
+      e.target.value = '';
+      return;
     }
+
+    setError('');
+    setFile(chosen);
   };
 
   const runScan = async () => {
@@ -103,11 +116,22 @@ export default function FileScannerPage() {
             }
           }}
         >
-          <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} />
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="visually-hidden"
+            id="file-scanner-input"
+            aria-describedby="file-scanner-limit"
+          />
           
           <UploadCloud size={64} style={{ color: 'var(--text-muted)', marginBottom: 24 }} />
-          <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Drag & Drop to Upload</h3>
+          <h3 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Drag &amp; drop to upload</h3>
           <p style={{ color: 'var(--text-secondary)' }}>or click to browse your computer</p>
+          {/* The limit is stated before the upload, not discovered through a 413. */}
+          <p id="file-scanner-limit" style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+            Any file type &middot; up to {formatBytes(MAX_UPLOAD_BYTES)}
+          </p>
           
           <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
             <span style={{ fontSize: 12, padding: '4px 12px', background: 'var(--bg-tertiary)', borderRadius: 20 }}>PDF</span>

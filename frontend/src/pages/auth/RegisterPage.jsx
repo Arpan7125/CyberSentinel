@@ -96,7 +96,7 @@ export default function RegisterPage() {
     <AuthLayout>
         <div className="auth-card">
           <div className="auth-logo">
-            <div className="auth-logo-icon"><ShieldCheck size={28} /></div>
+            <div className="auth-logo-icon" aria-hidden="true"><ShieldCheck size={28} /></div>
             <span className="auth-logo-text">CyberSentinel</span>
           </div>
 
@@ -124,55 +124,61 @@ export default function RegisterPage() {
               <h1 className="auth-title">Create your account</h1>
               <p className="auth-subtitle">Start protecting your organization in minutes</p>
 
-              {error && <div className="auth-error">{error}</div>}
+              {error && <div className="auth-error" role="alert">{error}</div>}
 
               <form className="auth-form" onSubmit={handleStep1}>
                 <div className="auth-input-group">
-                  <label className="auth-input-label">Full Name</label>
+                  <label htmlFor="register-full-name" className="auth-input-label">Full Name</label>
                   <div className="auth-input-wrapper">
-                    <span className="auth-input-icon"><User size={16} /></span>
-                    <input type="text" name="fullName" className="auth-input" placeholder="John Smith" value={form.fullName} onChange={handleChange} autoComplete="name" required />
+                    <span className="auth-input-icon" aria-hidden="true"><User size={16} /></span>
+                    <input id="register-full-name" type="text" name="fullName" className="auth-input" placeholder="John Smith" value={form.fullName} onChange={handleChange} autoComplete="name" required />
                   </div>
                 </div>
 
                 <div className="auth-input-group">
-                  <label className="auth-input-label">Work Email</label>
+                  <label htmlFor="register-email" className="auth-input-label">Work Email</label>
                   <div className="auth-input-wrapper">
-                    <span className="auth-input-icon"><Mail size={16} /></span>
-                    <input type="email" name="email" className="auth-input" placeholder="you@company.com" value={form.email} onChange={handleChange} autoComplete="email" required />
+                    <span className="auth-input-icon" aria-hidden="true"><Mail size={16} /></span>
+                    <input id="register-email" type="email" name="email" className="auth-input" placeholder="you@company.com" value={form.email} onChange={handleChange} autoComplete="email" required />
                   </div>
                 </div>
 
                 <div className="auth-input-group">
-                  <label className="auth-input-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <label htmlFor="register-password" className="auth-input-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
                     Password
                     <button type="button" onClick={handleGenerate} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <KeyRound size={12} /> Generate
                     </button>
                   </label>
                   <div className="auth-input-wrapper">
-                    <span className="auth-input-icon"><Lock size={16} /></span>
-                    <input type={showPwd ? 'text' : 'password'} name="password" className="auth-input" placeholder="Min. 8 characters" value={form.password} onChange={handleChange} autoComplete="new-password" required />
-                    <button type="button" className="auth-input-action" onClick={() => setShowPwd(!showPwd)} tabIndex={-1}>
+                    <span className="auth-input-icon" aria-hidden="true"><Lock size={16} /></span>
+                    <input id="register-password" type={showPwd ? 'text' : 'password'} name="password" className="auth-input" aria-describedby="register-password-strength" placeholder="Min. 8 characters" value={form.password} onChange={handleChange} autoComplete="new-password" required />
+                    <button
+                      type="button"
+                      className="auth-input-action"
+                      onClick={() => setShowPwd(!showPwd)}
+                      aria-label={showPwd ? 'Hide password' : 'Show password'}
+                      aria-pressed={showPwd}
+                    >
                       {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                  <PasswordStrength password={form.password} />
+                  <PasswordStrength password={form.password} id="register-password-strength" />
                 </div>
 
                 <div className="auth-input-group">
-                  <label className="auth-input-label">Confirm Password</label>
+                  <label htmlFor="register-confirm-password" className="auth-input-label">Confirm Password</label>
                   <div className="auth-input-wrapper">
-                    <span className="auth-input-icon"><Lock size={16} /></span>
-                    <input type={showPwd ? 'text' : 'password'} name="confirmPassword" className="auth-input" placeholder="Re-enter password" value={form.confirmPassword} onChange={handleChange} autoComplete="new-password" required />
+                    <span className="auth-input-icon" aria-hidden="true"><Lock size={16} /></span>
+                    <input id="register-confirm-password" type={showPwd ? 'text' : 'password'} name="confirmPassword" className="auth-input" placeholder="Re-enter password" value={form.confirmPassword} onChange={handleChange} autoComplete="new-password" required />
                   </div>
                   {form.confirmPassword && form.password !== form.confirmPassword && (
                     <span style={{ fontSize: 12, color: 'var(--accent-red)' }}>Passwords do not match</span>
                   )}
                 </div>
 
-                <label className="auth-remember" style={{ fontSize: 12 }}>
-                  <input type="checkbox" name="agreeTerms" checked={form.agreeTerms} onChange={handleChange} />
+                <label htmlFor="register-agree-terms" className="auth-remember" style={{ fontSize: 12 }}>
+                  <input id="register-agree-terms" type="checkbox" name="agreeTerms" checked={form.agreeTerms} onChange={handleChange} />
                   I agree to the <Link to="/terms" style={{ color: 'var(--accent)', marginLeft: 3 }}>Terms</Link> & <Link to="/privacy" style={{ color: 'var(--accent)' }}>Privacy Policy</Link>
                 </label>
 

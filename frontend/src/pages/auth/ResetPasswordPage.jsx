@@ -70,10 +70,11 @@ export default function ResetPasswordPage() {
 
               <form className="auth-form" onSubmit={handleSubmit}>
                 <div className="auth-input-group">
-                  <label className="auth-input-label">Email Address</label>
+                  <label htmlFor="reset-email" className="auth-input-label">Email Address</label>
                   <div className="auth-input-wrapper">
-                    <span className="auth-input-icon">📧</span>
+                    <span className="auth-input-icon" aria-hidden="true">📧</span>
                     <input
+                      id="reset-email"
                       type="email"
                       className="auth-input"
                       value={email}
@@ -85,11 +86,14 @@ export default function ResetPasswordPage() {
                 </div>
 
                 <div className="auth-input-group">
-                  <label className="auth-input-label">6-Digit OTP Code</label>
+                  <label htmlFor="reset-otp" className="auth-input-label">6-Digit OTP Code</label>
                   <div className="auth-input-wrapper">
-                    <span className="auth-input-icon">🔑</span>
+                    <span className="auth-input-icon" aria-hidden="true">🔑</span>
                     <input
+                      id="reset-otp"
                       type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
                       className="auth-input"
                       value={otp}
                       onChange={(e) => { setOtp(e.target.value); setError(''); }}
@@ -101,11 +105,17 @@ export default function ResetPasswordPage() {
                 </div>
 
                 <div className="auth-input-group">
-                  <label className="auth-input-label">New Password</label>
+                  <label htmlFor="reset-password" className="auth-input-label">New Password</label>
                   <div className="auth-input-wrapper">
                     <span className="auth-input-icon">🔒</span>
-                    <input type={showPwd ? 'text' : 'password'} name="password" className="auth-input" placeholder="Min. 6 characters" value={form.password} onChange={handleChange} autoComplete="new-password" required />
-                    <button type="button" className="auth-input-action" onClick={() => setShowPwd(!showPwd)} tabIndex={-1}>
+                    <input id="reset-password" type={showPwd ? 'text' : 'password'} name="password" className="auth-input" placeholder="At least 8 characters" value={form.password} onChange={handleChange} autoComplete="new-password" required />
+                    <button
+                      type="button"
+                      className="auth-input-action"
+                      onClick={() => setShowPwd(!showPwd)}
+                      aria-label={showPwd ? 'Hide password' : 'Show password'}
+                      aria-pressed={showPwd}
+                    >
                       {showPwd ? '🙈' : '👁️'}
                     </button>
                   </div>
@@ -113,10 +123,10 @@ export default function ResetPasswordPage() {
                 </div>
 
                 <div className="auth-input-group">
-                  <label className="auth-input-label">Confirm Password</label>
+                  <label htmlFor="reset-confirm-password" className="auth-input-label">Confirm Password</label>
                   <div className="auth-input-wrapper">
                     <span className="auth-input-icon">🔒</span>
-                    <input type={showPwd ? 'text' : 'password'} name="confirmPassword" className="auth-input" placeholder="Re-enter new password" value={form.confirmPassword} onChange={handleChange} autoComplete="new-password" required />
+                    <input id="reset-confirm-password" type={showPwd ? 'text' : 'password'} name="confirmPassword" className="auth-input" placeholder="Re-enter new password" value={form.confirmPassword} onChange={handleChange} autoComplete="new-password" required />
                   </div>
                   {form.confirmPassword && form.password !== form.confirmPassword && (
                     <span style={{ fontSize: 12, color: 'var(--accent-red)' }}>Passwords do not match</span>

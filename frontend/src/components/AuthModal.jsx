@@ -33,7 +33,6 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
   const [forgotStep, setForgotStep] = useState(1);
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [devOtp, setDevOtp] = useState('');
 
   // Public configuration from the backend. The client ID is served by the
   // platform's own settings; there is deliberately no hard-coded fallback,
@@ -169,7 +168,10 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
     }
     setLoading(true);
     try {
-      await register(username, email, password, confirmPassword, role);
+      // No role is sent. Registration cannot create an administrator — the
+      // server ignores any role in the payload, and offering the choice here
+      // would promise something that silently does not happen.
+      await register(username, email, password, confirmPassword);
       onClose();
     } catch (err) {
       setError(err.message || 'Registration failed.');
@@ -186,7 +188,6 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
       const data = await authService.forgotPassword(email);
       // `otp` is only present when the server is running with a console email
       // backend; in production the code arrives by email and this stays unset.
-      setDevOtp(data?.otp || '');
       setForgotStep(2);
     } catch (err) {
       setError(err.message);
@@ -262,8 +263,10 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
           </span>
         </div>
 
-        {/* User/Admin Role Tab Selector */}
-        {activeTab !== 'forgot' && (
+        {/* Sign-in audience selector. Shown only when signing in: choosing
+            "Administrator" during registration used to send role=admin, which
+            the server acted on. Registration is always a standard account. */}
+        {activeTab === 'login' && (
           <div style={{
             display: 'flex',
             background: 'var(--bg-primary)',
@@ -445,12 +448,6 @@ export default function AuthModal({ isOpen, onClose, initialTab = 'login' }) {
               </form>
             ) : (
               <form onSubmit={handleCompleteForgot} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {devOtp && (
-                  <div style={{ padding: 10, background: 'var(--accent-orange-glow)', borderRadius: 8, fontSize: 11, color: 'var(--accent-orange)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>SANDBOX RESET CODE:</span>
-                    <strong style={{ fontSize: 12, fontFamily: 'monospace' }}>{devOtp}</strong>
-                  </div>
-                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <label className="form-label">6-DIGIT OTP</label>
                   <input

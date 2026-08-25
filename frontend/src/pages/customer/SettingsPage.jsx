@@ -10,6 +10,8 @@ export default function SettingsPage() {
   const [telemetryOptIn, setTelemetryOptIn] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const handleThemeChange = (newTheme) => {
     setTheme(newTheme);
@@ -19,16 +21,22 @@ export default function SettingsPage() {
   };
 
   const handleDeleteAccount = async () => {
-    if (deleteConfirmText === 'DELETE MY ACCOUNT') {
-      try {
-        await authService.deleteAccount();
-        alert('Account deleted successfully.');
-        logout();
-      } catch (err) {
-        alert(err.message || 'Failed to delete account. Please try again.');
-      }
-    } else {
-      alert('Confirmation text mismatch.');
+    if (deleteConfirmText !== 'DELETE MY ACCOUNT') {
+      setDeleteError('Type DELETE MY ACCOUNT exactly to confirm.');
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      await authService.deleteAccount();
+      // No success dialog: logout() navigates away, so a modal the user has to
+      // dismiss before that happens is pure friction.
+      await logout();
+    } catch (err) {
+      setDeleteError(err.message || 'Failed to delete your account. Try again.');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -139,23 +147,33 @@ export default function SettingsPage() {
                 Are you absolutely sure you want to delete your security node credentials? This action is irreversible.
               </p>
               <div className="form-group">
-                <label className="form-label-pub">
+                <label htmlFor="delete-confirm" className="form-label-pub">
                   Type <strong style={{ color: 'var(--text-primary)' }}>DELETE MY ACCOUNT</strong> to confirm:
                 </label>
                 <input
+                  id="delete-confirm"
                   type="text"
                   className="form-input-pub"
                   value={deleteConfirmText}
-                  onChange={e => setDeleteConfirmText(e.target.value)}
+                  onChange={e => { setDeleteConfirmText(e.target.value); if (deleteError) setDeleteError(''); }}
+                  aria-invalid={deleteError ? 'true' : undefined}
+                  aria-describedby={deleteError ? 'delete-confirm-error' : undefined}
+                  autoComplete="off"
                 />
               </div>
+
+              {deleteError && (
+                <p id="delete-confirm-error" className="field-error" role="alert">
+                  <span>{deleteError}</span>
+                </p>
+              )}
               <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
                 <button
                   className="btn-pub btn-pub-danger btn-pub-sm"
                   onClick={handleDeleteAccount}
-                  disabled={deleteConfirmText !== 'DELETE MY ACCOUNT'}
+                  disabled={deleting || deleteConfirmText !== 'DELETE MY ACCOUNT'}
                 >
-                  Delete Account
+                  {deleting ? 'Deleting…' : 'Delete Account'}
                 </button>
                 <button
                   className="btn-pub btn-pub-secondary btn-pub-sm"

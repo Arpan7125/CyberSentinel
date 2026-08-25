@@ -72,9 +72,33 @@ DEBUG = env_bool('DEBUG', False)
 DEV_SECRET_KEY = 'django-insecure-yp1+env+i@fhmm8xdjt^-4-463v3$5tb7klu3xi%qyzln=)s5u'
 SECRET_KEY = os.getenv('SECRET_KEY', '').strip()
 
-if not SECRET_KEY or (SECRET_KEY == DEV_SECRET_KEY and not DEBUG):
-    import secrets
-    SECRET_KEY = os.getenv('SECRET_KEY') or f"django-prod-key-{secrets.token_hex(32)}"
+# A missing key must stop the boot, not be invented. The previous code called
+# `secrets.token_hex(32)` as a fallback, which looks safe and is not: each
+# worker process generated a *different* key, so signed values verified or
+# failed depending on which worker answered, and every restart invalidated all
+# sessions. Fail loudly instead — the same treatment ALLOWED_HOSTS gets below.
+if not SECRET_KEY and (DEBUG or RUNNING_MANAGEMENT_TASK):
+    SECRET_KEY = DEV_SECRET_KEY
+
+if not SECRET_KEY:
+    raise ImproperlyConfigured(
+        "SECRET_KEY is not set. Generate one with:\n"
+        "  python -c \"from django.core.management.utils import get_random_secret_key as k; print(k())\"\n"
+        "and set it in the environment. It must stay stable across restarts and "
+        "identical across workers."
+    )
+
+if SECRET_KEY == DEV_SECRET_KEY and not DEBUG and not RUNNING_MANAGEMENT_TASK:
+    raise ImproperlyConfigured(
+        "SECRET_KEY is still the development key committed to this repository. "
+        "Set a real one before running with DEBUG off."
+    )
+
+# Key material for credentials that must be stored recoverably (Twilio tokens,
+# OAuth refresh tokens, customer API keys). See api/crypto.py. When unset it is
+# derived from SECRET_KEY, which is safe now that SECRET_KEY is guaranteed
+# stable — but set it explicitly in production so the two can rotate apart.
+FIELD_ENCRYPTION_KEY = os.getenv('FIELD_ENCRYPTION_KEY', '').strip()
 
 # Render exposes the service's public hostname; add it automatically so a fresh
 # deploy is reachable before ALLOWED_HOSTS has been set by hand.
@@ -256,8 +280,21 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Uploaded scan artefacts (screenshots, files) are read straight through, so cap
 # them well below the default 2.5MB in-memory threshold's larger cousin.
+# NOTE: neither of these is an upload size *limit*.
+# DATA_UPLOAD_MAX_MEMORY_SIZE caps the non-file part of a request body, and
+# FILE_UPLOAD_MAX_MEMORY_SIZE is only the threshold at which an upload spills
+# from memory to a temp file. An unbounded file upload is rejected by the views
+# themselves (see MAX_UPLOAD_BYTES in api/views.py), which is where the real
+# ceiling lives.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MB
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024    # 2 MB before spilling to disk
+
+#: Hard ceiling for any uploaded artefact (screenshot, file scan).
+MAX_UPLOAD_BYTES = int(os.getenv('MAX_UPLOAD_BYTES', 10 * 1024 * 1024))
+
+#: Longest message body the scanner will classify. Ten megabytes of text
+#: through the ML pipeline is a denial-of-service, not a scan.
+MAX_SCAN_TEXT_CHARS = int(os.getenv('MAX_SCAN_TEXT_CHARS', 20000))
 
 
 # ── CORS / CSRF ─────────────────────────────────────────────────────────────
@@ -324,6 +361,9 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
+        # Developer API keys were issued by the UI but nothing ever consumed
+        # them, so a key handed to a customer authenticated nothing.
+        'api.authentication.DeveloperApiKeyAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -343,6 +383,12 @@ REST_FRAMEWORK = {
         'scan_user': os.getenv('THROTTLE_SCAN_USER', '300/hour'),
         # Credential endpoints are limited per-IP to blunt brute forcing.
         'auth': os.getenv('THROTTLE_AUTH', '20/hour'),
+        # Outbound SMS costs money and reaches a third party's phone, so it is
+        # capped far below the general user allowance. Without this an account
+        # could push 1000 arbitrary messages an hour through our Twilio credit.
+        'sms': os.getenv('THROTTLE_SMS', '20/hour'),
+        # Unauthenticated form posts (contact, scam report) — spam control.
+        'public_write': os.getenv('THROTTLE_PUBLIC_WRITE', '15/hour'),
     },
 }
 

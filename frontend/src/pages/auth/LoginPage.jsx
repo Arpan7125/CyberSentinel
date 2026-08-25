@@ -22,7 +22,6 @@ export default function LoginPage() {
   const [otpStep, setOtpStep] = useState(1); // 1 = enter email, 2 = enter OTP code
   const [otpEmail, setOtpEmail] = useState('');
   const [otpCode, setOtpCode] = useState(['', '', '', '', '', '']);
-  const [devOtpHint, setDevOtpHint] = useState('');
 
   const handleChange = (e) => {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -75,9 +74,6 @@ export default function LoginPage() {
     try {
       const res = await requestOTP(otpEmail);
       setSuccessMsg(res.message || 'OTP verification code sent to your email.');
-      if (res.dev_otp) {
-        setDevOtpHint(`Dev Code: ${res.dev_otp}`);
-      }
       setOtpStep(2);
     } catch (err) {
       setError(err.message || 'Failed to send OTP code.');
@@ -181,17 +177,18 @@ export default function LoginPage() {
               </div>
             )}
             {successMsg && <div style={{ padding: 12, background: 'rgba(50,215,75,0.1)', color: '#32D74B', border: '1px solid rgba(50,215,75,0.2)', borderRadius: 6, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{successMsg}</div>}
-            {devOtpHint && <div style={{ padding: 10, background: 'rgba(175,82,222,0.1)', color: '#AF52DE', border: '1px solid rgba(175,82,222,0.2)', borderRadius: 6, fontSize: 12, fontWeight: 700, marginBottom: 16, textAlign: 'center' }}>{devOtpHint}</div>}
 
             {loginMode === 'password' ? (
               <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Email Address or Username</label>
+                  <label htmlFor="login-identifier" style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Email Address or Username</label>
                   <input 
+                    id="login-identifier"
                     type="text" 
                     name="email"
                     value={form.email}
                     onChange={handleChange}
+                    autoComplete="username"
                     placeholder="you@example.com"
                     style={{ width: '100%', padding: 14, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 15, outline: 'none', transition: 'border 0.2s', boxShadow: 'var(--shadow-sm)' }}
                   />
@@ -199,15 +196,17 @@ export default function LoginPage() {
                 
                 <div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Password</label>
+                    <label htmlFor="login-password" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Password</label>
                     <Link to="/forgot-password" style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}>Forgot?</Link>
                   </div>
                   <div style={{ position: 'relative' }}>
                     <input 
+                      id="login-password"
                       type={showPwd ? 'text' : 'password'} 
                       name="password"
                       value={form.password}
                       onChange={handleChange}
+                      autoComplete="current-password"
                       placeholder="Enter your password"
                       style={{ width: '100%', padding: 14, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 15, outline: 'none', transition: 'border 0.2s', boxShadow: 'var(--shadow-sm)' }}
                     />
@@ -239,11 +238,13 @@ export default function LoginPage() {
                 {otpStep === 1 ? (
                   <form onSubmit={handleRequestOTP} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Email Address or Username</label>
+                      <label htmlFor="otp-identifier" style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>Email Address or Username</label>
                       <input 
+                        id="otp-identifier"
                         type="text" 
                         value={otpEmail}
                         onChange={(e) => { setOtpEmail(e.target.value); setError(''); }}
+                        autoComplete="username"
                         placeholder="you@example.com"
                         style={{ width: '100%', padding: 14, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 15, outline: 'none' }}
                       />
@@ -269,6 +270,8 @@ export default function LoginPage() {
                           maxLength={1}
                           value={digit}
                           onChange={(e) => handleOTPChange(idx, e.target.value)}
+                          aria-label={`Verification code, digit ${idx + 1} of 6`}
+                          autoComplete={idx === 0 ? 'one-time-code' : 'off'}
                           onPaste={(e) => {
                             e.preventDefault();
                             const text = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);

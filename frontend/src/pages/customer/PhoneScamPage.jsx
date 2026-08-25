@@ -10,6 +10,7 @@ export default function PhoneScamPage() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportDesc, setReportDesc] = useState('');
   const [submittingReport, setSubmittingReport] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -17,13 +18,13 @@ export default function PhoneScamPage() {
     setIsSearching(true);
     setResult(null);
     setReportSuccess('');
+    setError('');
     
     try {
       const res = await scanService.analyzePhone({ phone });
       setResult(res);
     } catch (err) {
-      console.error(err);
-      alert('Failed to analyze phone number. Server might be offline.');
+      setError(err.message || "Couldn't look up that number.");
     } finally {
       setIsSearching(false);
     }
@@ -44,8 +45,7 @@ export default function PhoneScamPage() {
       const res = await scanService.analyzePhone({ phone: result.number });
       setResult(res);
     } catch (err) {
-      console.error(err);
-      alert('Failed to submit report. Please try again.');
+      setError(err.message || "Couldn't submit that report. Try again.");
     } finally {
       setSubmittingReport(false);
     }
@@ -57,6 +57,9 @@ export default function PhoneScamPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 32, paddingBottom: 40, maxWidth: 900, margin: '0 auto' }}>
+      {error && (
+        <p className="field-error" role="alert"><span>{error}</span></p>
+      )}
       
       {/* Header & Search */}
       <div style={{ textAlign: 'center', marginTop: 32 }}>

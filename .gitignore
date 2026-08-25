@@ -58,3 +58,7 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Internal security audit — documents exploitable paths in detail.
+# Kept out of this public repo deliberately; it lives on the developer machine.
+AUDIT-REPORT.html

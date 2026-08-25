@@ -15,6 +15,7 @@ export default function TicketsPage() {
 
   const [replyText, setReplyText] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     fetchTickets();
@@ -44,7 +45,7 @@ export default function TicketsPage() {
       setShowCreateForm(false);
     } catch (err) {
       console.error('Failed to create ticket', err);
-      alert('Failed to create ticket. Please try again.');
+      setError(err.message || "Couldn't create that ticket. Try again.");
     }
   };
 
@@ -67,12 +68,15 @@ export default function TicketsPage() {
       setReplyText('');
     } catch (err) {
       console.error('Failed to send reply', err);
-      alert('Failed to send reply. Please try again.');
+      setError(err.message || "Couldn't send that reply. Try again.");
     }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {error && (
+        <p className="field-error" role="alert"><span>{error}</span></p>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 className="page-title">Support Tickets</h1>

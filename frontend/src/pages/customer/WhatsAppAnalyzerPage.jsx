@@ -8,6 +8,7 @@ export default function WhatsAppAnalyzerPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState(null);
   const [inputText, setInputText] = useState('');
+  const [error, setError] = useState('');
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
 
@@ -44,8 +45,7 @@ export default function WhatsAppAnalyzerPage() {
         ])
       });
     } catch (err) {
-      console.error(err);
-      alert('Failed to analyze WhatsApp message. Server might be offline.');
+      setError(err.message || 'Failed to analyze that message.');
     } finally {
       setAnalyzing(false);
     }
@@ -92,6 +92,11 @@ export default function WhatsAppAnalyzerPage() {
         </div>
 
         <form onSubmit={handleAnalyze} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {error && (
+            <p className="field-error" role="alert" style={{ marginBottom: 12 }}>
+              <span>{error}</span>
+            </p>
+          )}
           <textarea 
             placeholder="Or paste the suspicious message here..."
             value={inputText}

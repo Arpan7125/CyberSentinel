@@ -1,5 +1,7 @@
 import datetime
-import uuid
+import logging
+import secrets
+
 import requests
 from django.conf import settings
 from django.utils import timezone
@@ -8,7 +10,9 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from .models import OAuthProvider, ConnectedAccount, IntegrationSyncLog
+from .models import OAuthProvider, ConnectedAccount, IntegrationSyncLog, OAuthState
+
+logger = logging.getLogger('api')
 
 # Providers with a real OAuth implementation behind them. Everything else in the
 # marketplace is honestly marked "not yet connectable" rather than faking a connection —
@@ -35,24 +39,32 @@ class OAuthProviderListView(APIView):
         return Response(data)
 
 class OAuthStartView(APIView):
-    """Generate a real Google authorization URL for a specific provider (Gmail import, sign-in)."""
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    """Begin a Google authorization flow.
+
+    Requires authentication: connecting a mailbox happens *to* an account, so
+    there is always a user, and knowing who started the flow is what makes the
+    `state` check meaningful on the way back.
+    """
+
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
         provider_id = request.data.get('provider_id')
         try:
             provider = OAuthProvider.objects.get(id=provider_id, is_active=True)
-        except OAuthProvider.DoesNotExist:
-            return Response({'error': 'Provider not found'}, status=status.HTTP_404_NOT_FOUND)
+        except (OAuthProvider.DoesNotExist, ValueError, TypeError):
+            return Response({'error': 'Provider not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         if provider.name not in REAL_OAUTH_PROVIDER_NAMES or not settings.GOOGLE_CLIENT_ID:
             return Response({
-                'error': f'{provider.name} isn\'t connected to a real OAuth flow yet. '
-                         f'Only Gmail is supported in this build — check back soon.'
+                'error': f"{provider.name} isn't connected to a real OAuth flow yet. "
+                         f"Only Gmail is supported in this build."
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        state = uuid.uuid4().hex
+        OAuthState.purge_expired()
+        state = secrets.token_urlsafe(32)
+        OAuthState.objects.create(state=state, user=request.user, provider=provider)
+
         params = {
             'client_id': settings.GOOGLE_CLIENT_ID,
             'redirect_uri': settings.GOOGLE_OAUTH_REDIRECT_URI,
@@ -60,89 +72,132 @@ class OAuthStartView(APIView):
             'scope': GOOGLE_SCOPES,
             'access_type': 'offline',
             'prompt': 'consent',
-            'state': f"{provider.id}:{state}",
+            'state': state,
         }
         auth_url = f"{GOOGLE_AUTH_URL}?{requests.compat.urlencode(params)}"
 
         return Response({
             'auth_url': auth_url,
             'provider_name': provider.name,
-            'scopes': provider.default_scopes.split(',')
+            'scopes': provider.default_scopes.split(','),
         })
 
+
 class OAuthCallbackView(APIView):
-    """Exchange the real Google authorization code for real tokens and store the connection."""
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    """Exchange an authorization code for tokens and store the connection.
+
+    Three things changed here:
+
+    * The `state` is verified against the stored row and consumed. Without that
+      check the endpoint would accept a code from anyone for anyone.
+    * Authentication is required. It was previously disabled, which meant
+      `request.user` was always anonymous and the block that actually saved the
+      ConnectedAccount could never run — the flow burned a real code and stored
+      nothing while reporting success.
+    * The provider's access token is no longer echoed to the client. The server
+      holds it; the browser has no use for it and every place it landed
+      (localStorage, logs) was a place it could leak from.
+    """
+
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        provider_id = request.data.get('provider_id')
         code = request.data.get('code')
-
-        try:
-            provider = OAuthProvider.objects.get(id=provider_id)
-        except OAuthProvider.DoesNotExist:
-            return Response({'error': 'Invalid provider'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if provider.name not in REAL_OAUTH_PROVIDER_NAMES or not settings.GOOGLE_CLIENT_ID:
-            return Response({'error': f'{provider.name} does not have a real OAuth integration configured.'}, status=status.HTTP_400_BAD_REQUEST)
+        state = (request.data.get('state') or '').strip()
 
         if not code:
-            return Response({'error': 'Missing authorization code from Google.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'Missing authorization code.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not state:
+            return Response({'error': 'Missing state parameter.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        token_resp = requests.post(GOOGLE_TOKEN_URL, data={
-            'code': code,
-            'client_id': settings.GOOGLE_CLIENT_ID,
-            'client_secret': settings.GOOGLE_CLIENT_SECRET,
-            'redirect_uri': settings.GOOGLE_OAUTH_REDIRECT_URI,
-            'grant_type': 'authorization_code',
-        }, timeout=10)
+        state_row = (OAuthState.objects
+                     .select_related('provider')
+                     .filter(state=state, user=request.user)
+                     .first())
+
+        if state_row is None or state_row.is_expired():
+            if state_row:
+                state_row.delete()
+            return Response(
+                {'error': 'This authorization link is no longer valid. Start the connection again.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        provider = state_row.provider
+        state_row.delete()  # single use, whatever happens next
+
+        if provider.name not in REAL_OAUTH_PROVIDER_NAMES or not settings.GOOGLE_CLIENT_ID:
+            return Response({'error': f'{provider.name} does not have a real OAuth integration configured.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            token_resp = requests.post(GOOGLE_TOKEN_URL, data={
+                'code': code,
+                'client_id': settings.GOOGLE_CLIENT_ID,
+                'client_secret': settings.GOOGLE_CLIENT_SECRET,
+                'redirect_uri': settings.GOOGLE_OAUTH_REDIRECT_URI,
+                'grant_type': 'authorization_code',
+            }, timeout=10)
+        except requests.RequestException:
+            logger.exception('Google token exchange failed')
+            return Response({'error': "Couldn't reach Google to complete the connection. Try again."},
+                            status=status.HTTP_502_BAD_GATEWAY)
 
         if token_resp.status_code != 200:
-            return Response({'error': 'Google rejected the authorization code.', 'details': token_resp.json()}, status=status.HTTP_400_BAD_REQUEST)
+            # Google's error body can carry the client_secret back in some
+            # failure modes, so it is logged, never returned.
+            logger.warning('Google rejected authorization code: %s', token_resp.text[:500])
+            return Response({'error': 'Google rejected the authorization code. Start the connection again.'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         token_data = token_resp.json()
         access_token = token_data.get('access_token', '')
         refresh_token = token_data.get('refresh_token', '')
         expires_in = token_data.get('expires_in', 3600)
 
-        userinfo_resp = requests.get(GOOGLE_USERINFO_URL, headers={'Authorization': f'Bearer {access_token}'}, timeout=10)
-        real_email = userinfo_resp.json().get('email', '') if userinfo_resp.status_code == 200 else ''
-        user = request.user if request.user and request.user.is_authenticated else None
-        account_id = None
-        if user:
-            account, created = ConnectedAccount.objects.update_or_create(
-                user=user,
-                provider=provider,
-                defaults={
-                    'provider_account_id': userinfo_resp.json().get('sub', '') if userinfo_resp.status_code == 200 else '',
-                    'provider_account_email': real_email,
-                    'access_token': access_token,
-                    'refresh_token': refresh_token,
-                    'scopes_granted': provider.default_scopes,
-                    'token_expires_at': timezone.now() + datetime.timedelta(seconds=expires_in),
-                    'status': 'connected',
-                    'health_status': 'Healthy'
-                }
-            )
-            account_id = account.id
+        real_email, account_sub = '', ''
+        try:
+            userinfo_resp = requests.get(GOOGLE_USERINFO_URL,
+                                         headers={'Authorization': f'Bearer {access_token}'},
+                                         timeout=10)
+            if userinfo_resp.status_code == 200:
+                info = userinfo_resp.json()
+                real_email = info.get('email', '')
+                account_sub = info.get('sub', '')
+        except requests.RequestException:
+            logger.exception('Google userinfo lookup failed')
 
-            if provider.name == 'Gmail':
-                from .models import UserIntegration
-                config, _ = UserIntegration.objects.get_or_create(user=user)
-                config.gmail_access_token = access_token
-                config.save()
+        account, _ = ConnectedAccount.objects.update_or_create(
+            user=request.user,
+            provider=provider,
+            defaults={
+                'provider_account_id': account_sub,
+                'provider_account_email': real_email,
+                'access_token': access_token,
+                'refresh_token': refresh_token,
+                'scopes_granted': provider.default_scopes,
+                'token_expires_at': timezone.now() + datetime.timedelta(seconds=expires_in),
+                'status': 'connected',
+                'health_status': 'Healthy',
+            }
+        )
+
+        if provider.name == 'Gmail':
+            from .models import UserIntegration
+            config, _ = UserIntegration.objects.get_or_create(user=request.user)
+            config.gmail_access_token = access_token
+            config.save(update_fields=['gmail_access_token'])
 
         return Response({
-            'message': f'Successfully connected to {provider.name}',
-            'account_id': account_id,
+            'message': f'Connected to {provider.name}.',
+            'account_id': account.id,
             'email': real_email,
-            'access_token': access_token
         })
+
 
 class ConnectedAccountListView(APIView):
     """View user's active connected accounts."""
-    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -165,7 +220,6 @@ class ConnectedAccountListView(APIView):
 
 class IntegrationSyncView(APIView):
     """Trigger a sync for a specific connected account."""
-    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -223,7 +277,6 @@ class IntegrationSyncView(APIView):
 
 class IntegrationDisconnectView(APIView):
     """Disconnect and revoke an integration."""
-    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -241,7 +294,6 @@ class IntegrationDisconnectView(APIView):
 
 class IntegrationSyncLogsView(APIView):
     """Get sync logs for a specific account."""
-    authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request, account_id):

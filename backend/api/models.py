@@ -1,4 +1,7 @@
 from django.db import models
+
+from .crypto import hash_secret, secrets_equal
+from .fields import EncryptedCharField, EncryptedTextField
 from django.contrib.auth.models import User
 
 # ── 1. SCANNING LOGS AND DATA MODEL ───────────────────────────────────────────
@@ -98,22 +101,67 @@ class Subscriber(models.Model):
 # ── 4. SECURITY PASSCODE VERIFICATION ─────────────────────────────────────────
 
 class PasswordResetOTP(models.Model):
+    """A single-use verification code.
+
+    Three things this model deliberately does, each fixing a real hole:
+
+    * The code is stored as a SHA-256 hash, never plaintext. A database read no
+      longer hands over live codes.
+    * `purpose` separates password reset from passwordless login. They used to
+      share one table, so a code mailed out for "reset your password" could be
+      replayed against the login endpoint.
+    * `attempts` burns the record after MAX_ATTEMPTS wrong guesses, so a
+      six-digit space is not brute-forceable by simply spreading requests across
+      IP addresses to dodge the per-IP throttle.
+    """
+
+    PURPOSE_RESET = 'reset'
+    PURPOSE_LOGIN = 'login'
+    PURPOSE_CHOICES = (
+        (PURPOSE_RESET, 'Password reset'),
+        (PURPOSE_LOGIN, 'Passwordless login'),
+    )
+
+    MAX_ATTEMPTS = 5
+    TTL_MINUTES = 10
+
     email = models.EmailField()
-    otp = models.CharField(max_length=6)
+    otp = models.CharField(max_length=64, help_text='SHA-256 of the code; never the code itself.')
+    purpose = models.CharField(max_length=10, choices=PURPOSE_CHOICES, default=PURPOSE_RESET)
+    attempts = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     is_verified = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Verification Code"
+        verbose_name_plural = "Verification Codes"
+        indexes = [models.Index(fields=['email', 'purpose'])]
 
     def is_expired(self):
         from django.utils import timezone
         import datetime
-        return timezone.now() > self.created_at + datetime.timedelta(minutes=10)
+        return timezone.now() > self.created_at + datetime.timedelta(minutes=self.TTL_MINUTES)
 
-    class Meta:
-        verbose_name = "Password Reset OTP"
-        verbose_name_plural = "Password Reset OTPs"
+    def set_code(self, raw_code):
+        self.otp = hash_secret(raw_code)
+
+    def matches(self, raw_code):
+        return secrets_equal(self.otp, hash_secret(raw_code))
+
+    def register_failure(self):
+        """Count a wrong guess and delete the record once the budget is spent.
+
+        Returns True if the code is now dead and the caller should stop.
+        """
+        self.attempts += 1
+        if self.attempts >= self.MAX_ATTEMPTS:
+            self.delete()
+            return True
+        self.save(update_fields=['attempts'])
+        return False
 
     def __str__(self):
-        return f"{self.email} | {self.otp} | Verified: {self.is_verified}"
+        return f"{self.email} | {self.get_purpose_display()} | Verified: {self.is_verified}"
 
 class DeveloperApiKey(models.Model):
     """User-generated API keys for external SIEM/SOC integrations. Only a hash
@@ -133,31 +181,52 @@ class DeveloperApiKey(models.Model):
 
 
 class AdminAuthKey(models.Model):
+    """An administrator's second factor, stored the same way a password is.
+
+    Only the SHA-256 hash is kept. `prefix` exists so the admin list can show
+    which key is which without being able to reproduce any of them. Previously
+    this column held the key in plaintext, which meant read access to the
+    database was equivalent to superuser access to the product.
+    """
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='admin_auth_key')
-    auth_key = models.CharField(max_length=64, unique=True)
+    key_hash = models.CharField(max_length=64, unique=True)
+    prefix = models.CharField(max_length=20, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     last_used = models.DateTimeField(null=True, blank=True)
+
+    def set_key(self, raw_key):
+        self.key_hash = hash_secret(raw_key)
+        self.prefix = raw_key[:12]
+
+    def matches(self, raw_key):
+        return secrets_equal(self.key_hash, hash_secret(raw_key))
 
     class Meta:
         verbose_name = "Admin Auth Key"
         verbose_name_plural = "Admin Auth Keys"
 
     def __str__(self):
-        return f"Auth Key for {self.user.email}"
+        return f"Auth Key {self.prefix}… for {self.user.email}"
 
 
 # ── 5. USER API INTEGRATION SETTINGS ─────────────────────────────────────────
 
 class UserIntegration(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='integration_config')
+    # Client IDs and phone numbers are not secrets and stay queryable.
     gmail_client_id = models.CharField(max_length=255, blank=True, default='')
-    gmail_access_token = models.TextField(blank=True, default='')
     twilio_sid = models.CharField(max_length=100, blank=True, default='')
-    twilio_token = models.CharField(max_length=100, blank=True, default='')
     twilio_from = models.CharField(max_length=20, blank=True, default='')
     twilio_to = models.CharField(max_length=20, blank=True, default='')
-    openai_api_key = models.CharField(max_length=255, blank=True, default='')
-    virustotal_api_key = models.CharField(max_length=255, blank=True, default='')
+
+    # Everything below is a live credential belonging to the customer. Encrypted
+    # at rest — see api/crypto.py. These are never returned by the API; the
+    # config endpoint reports whether each one is set, plus a masked suffix.
+    gmail_access_token = EncryptedTextField(blank=True, default='')
+    twilio_token = EncryptedCharField(max_length=100, blank=True, default='')
+    openai_api_key = EncryptedCharField(max_length=255, blank=True, default='')
+    virustotal_api_key = EncryptedCharField(max_length=255, blank=True, default='')
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -182,7 +251,7 @@ class UserProfile(models.Model):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='customer')
     company = models.CharField(max_length=150, blank=True, default='')
     mfa_enabled = models.BooleanField(default=False)
-    mfa_secret = models.CharField(max_length=32, blank=True, default='')
+    mfa_secret = EncryptedCharField(max_length=32, blank=True, default='')
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -426,7 +495,8 @@ class OAuthProvider(models.Model):
     category = models.CharField(max_length=50, choices=CATEGORY_CHOICES)
     description = models.TextField(blank=True, default='')
     client_id = models.CharField(max_length=255, blank=True, default='')
-    client_secret = models.CharField(max_length=255, blank=True, default='')
+    # The platform's own OAuth secret for this provider — encrypted at rest.
+    client_secret = EncryptedCharField(max_length=255, blank=True, default='')
     redirect_uri = models.CharField(max_length=255, blank=True, default='')
     auth_url = models.CharField(max_length=255, blank=True, default='')
     token_url = models.CharField(max_length=255, blank=True, default='')
@@ -437,6 +507,46 @@ class OAuthProvider(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.category})"
+
+
+class OAuthState(models.Model):
+    """A pending OAuth authorization, keyed by the `state` parameter.
+
+    The authorization flow used to generate a `state`, put it in the URL, and
+    never store or check it — which is the textbook OAuth CSRF hole: an attacker
+    could hand a victim their own authorization code and get the attacker's
+    mailbox bound to the victim's account. The state is now minted here, tied to
+    the user who started the flow, and required to match on the way back.
+
+    Rows are single-use and short-lived; `purge_expired` is called whenever a new
+    one is created so the table does not accumulate abandoned flows.
+    """
+
+    TTL_MINUTES = 10
+
+    state = models.CharField(max_length=64, unique=True, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='oauth_states')
+    provider = models.ForeignKey('OAuthProvider', on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "OAuth State"
+        verbose_name_plural = "OAuth States"
+
+    def is_expired(self):
+        from django.utils import timezone
+        import datetime
+        return timezone.now() > self.created_at + datetime.timedelta(minutes=self.TTL_MINUTES)
+
+    @classmethod
+    def purge_expired(cls):
+        from django.utils import timezone
+        import datetime
+        cutoff = timezone.now() - datetime.timedelta(minutes=cls.TTL_MINUTES)
+        cls.objects.filter(created_at__lt=cutoff).delete()
+
+    def __str__(self):
+        return f"OAuth state for {self.user.username} → {self.provider_id}"
 
 
 class ConnectedAccount(models.Model):
@@ -452,8 +562,10 @@ class ConnectedAccount(models.Model):
     provider_account_id = models.CharField(max_length=255, blank=True, default='')
     provider_account_email = models.CharField(max_length=255, blank=True, default='')
     
-    access_token = models.TextField(blank=True, default='')
-    refresh_token = models.TextField(blank=True, default='')
+    # Live provider tokens. These grant access to the customer's mailbox, so
+    # they are encrypted at rest and never serialized back to any client.
+    access_token = EncryptedTextField(blank=True, default='')
+    refresh_token = EncryptedTextField(blank=True, default='')
     scopes_granted = models.TextField(blank=True, default='')
     token_expires_at = models.DateTimeField(null=True, blank=True)
     

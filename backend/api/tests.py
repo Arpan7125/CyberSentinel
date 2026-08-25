@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.test import TestCase, override_settings
@@ -7,7 +9,11 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from .ml_classifier import classifier
-from .models import PaymentInvoice, ScanLog, SubscriptionPlan, UserSubscription
+from .models import (
+    AdminAuthKey, ConnectedAccount, DeviceSession, OAuthProvider, OAuthState,
+    PasswordResetOTP, PaymentInvoice, ScamReport, ScanLog, SubscriptionPlan,
+    SupportTicket, TicketReply, UserIntegration, UserSubscription,
+)
 from .url_analyzer import analyze_url
 
 # Throttling is exercised by its own test below. Everywhere else it would make
@@ -17,6 +23,7 @@ NO_THROTTLE = override_settings(
         'DEFAULT_AUTHENTICATION_CLASSES': [
             'rest_framework.authentication.TokenAuthentication',
             'rest_framework.authentication.SessionAuthentication',
+            'api.authentication.DeveloperApiKeyAuthentication',
         ],
         'DEFAULT_PERMISSION_CLASSES': ['rest_framework.permissions.IsAuthenticated'],
         'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -188,14 +195,34 @@ class PermissionTestCase(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_sms_dispatch_works_when_authenticated(self):
+    def test_sms_dispatch_requires_authentication(self):
+        response = self.client.post(
+            reverse('integrations-sms-dispatch'),
+            {"message": "Alert!", "to_number": "+14155550123"},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_sms_dispatch_rejects_an_invalid_number(self):
         self.authenticate()
         response = self.client.post(
             reverse('integrations-sms-dispatch'),
-            {"message": "Alert! CyberSentinel flagged high risk.", "to_number": "+1234567890"},
+            {"message": "Alert!", "to_number": "not a phone number"},
             format='json',
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_sms_dispatch_without_twilio_config_is_an_honest_error(self):
+        """No Twilio credentials means no send — and we say so, rather than
+        reporting a simulated success the user will believe."""
+        self.authenticate()
+        response = self.client.post(
+            reverse('integrations-sms-dispatch'),
+            {"message": "Alert! CyberSentinel flagged high risk.", "to_number": "+14155550123"},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data.get("is_configured", True))
 
     def test_gmail_import_requires_authentication(self):
         response = self.client.post(reverse('integrations-gmail-import'), {}, format='json')
@@ -227,16 +254,28 @@ class AuthFlowTestCase(APITestCase):
     def setUp(self):
         cache.clear()
 
-    def test_admin_registration(self):
+    def test_registration_ignores_a_requested_role(self):
+        """Signup must never be able to mint a privileged account.
+
+        This test previously asserted the opposite — that posting
+        `role: "admin"` produced an administrator — so the escalation was not
+        just present, it was covered.
+        """
         response = self.client.post(reverse('auth-register'), {
             "username": "newadmin",
             "email": "newadmin@cybersentinel.ai",
             "password": "adminpassword123",
             "confirm_password": "adminpassword123",
             "role": "admin",
+            "is_staff": True,
+            "is_superuser": True,
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data["user"]["is_admin"])
+        self.assertFalse(response.data["user"]["is_admin"])
+
+        created = User.objects.get(username="newadmin")
+        self.assertFalse(created.is_staff)
+        self.assertFalse(created.is_superuser)
 
     def test_password_forgot_and_reset_flow(self):
         User.objects.create_user(
@@ -566,3 +605,560 @@ class ThrottleTestCase(APITestCase):
 
             response = self.client.post(url, {"text": "hello there"}, format='json')
             self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Regression tests for the security review of 24 Aug 2026.
+#
+# Each test below corresponds to a specific finding. They exist to fail loudly
+# if any of these behaviours is ever reintroduced — several of the original
+# holes were the kind that look like a convenience feature until you read them
+# from an attacker's side.
+# ═══════════════════════════════════════════════════════════════════════════
+
+@NO_THROTTLE
+class PrivilegeEscalationRegressionTests(APITestCase):
+    """The five critical findings: four routes to superuser, one to the admin UI."""
+
+    def test_signup_cannot_grant_staff_or_superuser(self):
+        """BE-01. `role` in the request body used to set is_staff and is_superuser."""
+        for index, payload_extra in enumerate(
+                ({'role': 'admin'}, {'is_staff': True}, {'is_superuser': True})):
+            username = f'escalate{index}'
+            body = {
+                'username': username,
+                'email': f'{username}@example.com',
+                'password': 'a-perfectly-fine-passphrase',
+                'confirm_password': 'a-perfectly-fine-passphrase',
+            }
+            body.update(payload_extra)
+            response = self.client.post(reverse('auth-register'), body, format='json')
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED, payload_extra)
+            user = User.objects.get(username=username)
+            self.assertFalse(user.is_staff, payload_extra)
+            self.assertFalse(user.is_superuser, payload_extra)
+
+    def test_hardcoded_master_keys_no_longer_work(self):
+        """BE-02. Two literal keys in the source used to create a superuser for
+        any email address presented alongside them."""
+        for legacy_key in ('ARPAN-ADMIN-7125-KEY', 'ADMIN-KEY-123456'):
+            response = self.client.post(reverse('auth-admin-login'), {
+                'email': 'attacker@example.com',
+                'auth_key': legacy_key,
+            }, format='json')
+            self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED, legacy_key)
+            self.assertNotIn('token', response.data)
+            self.assertFalse(User.objects.filter(email='attacker@example.com').exists())
+
+    def test_admin_login_rejects_a_wrong_key_for_a_real_admin(self):
+        """BE-03. The fallback accepted *any* key once the address belonged to
+        someone flagged as staff."""
+        admin = User.objects.create_user(
+            username='realadmin', email='realadmin@example.com',
+            password='x-long-enough-password', is_staff=True, is_superuser=True)
+        key = AdminAuthKey(user=admin)
+        key.set_key('CS-ADMIN-THE-REAL-ONE')
+        key.save()
+
+        response = self.client.post(reverse('auth-admin-login'), {
+            'email': 'realadmin@example.com',
+            'auth_key': 'anything-at-all',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertNotIn('token', response.data)
+
+    def test_admin_login_accepts_the_correct_key(self):
+        """The counterpart to the test above: locking it down must not lock out
+        the legitimate administrator."""
+        admin = User.objects.create_user(
+            username='realadmin2', email='realadmin2@example.com',
+            password='x-long-enough-password', is_staff=True)
+        key = AdminAuthKey(user=admin)
+        key.set_key('CS-ADMIN-CORRECT-KEY')
+        key.save()
+
+        response = self.client.post(reverse('auth-admin-login'), {
+            'email': 'realadmin2@example.com',
+            'auth_key': 'CS-ADMIN-CORRECT-KEY',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('token', response.data)
+
+    def test_admin_auth_key_is_not_stored_in_plaintext(self):
+        admin = User.objects.create_user(username='hashme', email='hashme@example.com',
+                                         password='x-long-enough-password', is_staff=True)
+        key = AdminAuthKey(user=admin)
+        key.set_key('CS-ADMIN-SECRET-VALUE')
+        key.save()
+        key.refresh_from_db()
+        self.assertNotIn('SECRET-VALUE', key.key_hash)
+        self.assertEqual(len(key.key_hash), 64)
+
+    def test_admin_registration_is_not_public(self):
+        """BE-04. This endpoint was AllowAny, so anyone could provision staff."""
+        response = self.client.post(reverse('auth-admin-register'), {
+            'email': 'selfmade@example.com', 'username': 'selfmade',
+        }, format='json')
+        self.assertIn(response.status_code,
+                      (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+        self.assertFalse(User.objects.filter(username='selfmade').exists())
+
+    def test_admin_registration_works_for_an_existing_admin(self):
+        admin = User.objects.create_superuser(
+            username='boss', email='boss@example.com', password='x-long-enough-password')
+        self.client.force_authenticate(user=admin)
+        response = self.client.post(reverse('auth-admin-register'), {
+            'email': 'colleague@example.com', 'username': 'colleague',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(User.objects.get(username='colleague').is_staff)
+
+
+@NO_THROTTLE
+class CredentialLeakageRegressionTests(APITestCase):
+    """BE-05: verification codes and auth keys used to come back in responses."""
+
+    def test_forgot_password_never_returns_the_code(self):
+        User.objects.create_user(username='leak', email='leak@example.com',
+                                 password='x-long-enough-password')
+        response = self.client.post(reverse('auth-forgot-password'),
+                                    {'email': 'leak@example.com'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        body = str(response.data)
+        self.assertNotIn('dev_otp', body)
+        self.assertNotIn('is_mocked', body)
+        # And nothing that looks like a six-digit code.
+        self.assertIsNone(re.search(r'\b\d{6}\b', body))
+
+    def test_request_otp_never_returns_the_code(self):
+        User.objects.create_user(username='leak2', email='leak2@example.com',
+                                 password='x-long-enough-password')
+        response = self.client.post(reverse('auth-request-otp'),
+                                    {'email': 'leak2@example.com'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('dev_otp', str(response.data))
+
+    def test_verification_code_is_stored_hashed(self):
+        User.objects.create_user(username='hashcode', email='hashcode@example.com',
+                                 password='x-long-enough-password')
+        self.client.post(reverse('auth-forgot-password'),
+                         {'email': 'hashcode@example.com'}, format='json')
+        record = PasswordResetOTP.objects.get(email='hashcode@example.com')
+        self.assertEqual(len(record.otp), 64)
+        self.assertEqual(record.purpose, PasswordResetOTP.PURPOSE_RESET)
+
+
+@NO_THROTTLE
+class UserEnumerationRegressionTests(APITestCase):
+    """BE-22: three endpoints used to confirm whether an address was registered."""
+
+    def setUp(self):
+        User.objects.create_user(username='known', email='known@example.com',
+                                 password='x-long-enough-password')
+
+    def test_forgot_password_answers_identically_either_way(self):
+        known = self.client.post(reverse('auth-forgot-password'),
+                                 {'email': 'known@example.com'}, format='json')
+        unknown = self.client.post(reverse('auth-forgot-password'),
+                                   {'email': 'nobody@example.com'}, format='json')
+        self.assertEqual(known.status_code, unknown.status_code)
+        self.assertEqual(known.data, unknown.data)
+
+    def test_login_answers_identically_for_bad_password_and_unknown_user(self):
+        bad_password = self.client.post(reverse('auth-login'),
+                                        {'username': 'known@example.com',
+                                         'password': 'wrong-password'}, format='json')
+        no_such_user = self.client.post(reverse('auth-login'),
+                                        {'username': 'nobody@example.com',
+                                         'password': 'wrong-password'}, format='json')
+        self.assertEqual(bad_password.status_code, no_such_user.status_code)
+        self.assertEqual(bad_password.data, no_such_user.data)
+
+
+@NO_THROTTLE
+class PasswordPolicyRegressionTests(APITestCase):
+    """BE-06: views hand-rolled `len(password) < 6` and never ran the validators
+    configured in settings, so "123456" was an acceptable password."""
+
+    def test_signup_rejects_a_short_password(self):
+        response = self.client.post(reverse('auth-register'), {
+            'username': 'shorty', 'email': 'shorty@example.com',
+            'password': 'abc123', 'confirm_password': 'abc123',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_signup_rejects_a_common_password(self):
+        response = self.client.post(reverse('auth-register'), {
+            'username': 'common', 'email': 'common@example.com',
+            'password': 'password123', 'confirm_password': 'password123',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_signup_rejects_an_all_numeric_password(self):
+        response = self.client.post(reverse('auth-register'), {
+            'username': 'numeric', 'email': 'numeric@example.com',
+            'password': '928374651029', 'confirm_password': '928374651029',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_signup_accepts_a_reasonable_password(self):
+        response = self.client.post(reverse('auth-register'), {
+            'username': 'sensible', 'email': 'sensible@example.com',
+            'password': 'correct-horse-battery', 'confirm_password': 'correct-horse-battery',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_signup_rejects_a_malformed_email(self):
+        response = self.client.post(reverse('auth-register'), {
+            'username': 'bademail', 'email': 'not-an-email',
+            'password': 'correct-horse-battery', 'confirm_password': 'correct-horse-battery',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_signup_is_case_insensitive_about_duplicate_emails(self):
+        User.objects.create_user(username='first', email='dup@example.com',
+                                 password='x-long-enough-password')
+        response = self.client.post(reverse('auth-register'), {
+            'username': 'second', 'email': 'DUP@Example.com',
+            'password': 'correct-horse-battery', 'confirm_password': 'correct-horse-battery',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+@NO_THROTTLE
+class SessionInvalidationRegressionTests(APITestCase):
+    """BE-14 / BE-15: a password reset left old tokens alive, and 'revoke
+    session' did not revoke anything."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='sessions', email='sessions@example.com',
+            password='the-original-password')
+
+    def _current_code(self, email, purpose):
+        from django.core import mail
+        body = mail.outbox[-1].body
+        return re.search(r'\b(\d{6})\b', body).group(1)
+
+    def test_password_reset_invalidates_existing_tokens(self):
+        stolen = Token.objects.create(user=self.user).key
+
+        self.client.post(reverse('auth-forgot-password'),
+                         {'email': 'sessions@example.com'}, format='json')
+        code = self._current_code('sessions@example.com', 'reset')
+
+        response = self.client.post(reverse('auth-reset-password'), {
+            'email': 'sessions@example.com', 'otp': code,
+            'new_password': 'a-brand-new-passphrase',
+            'confirm_password': 'a-brand-new-passphrase',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(Token.objects.filter(key=stolen).exists())
+
+    def test_revoking_a_session_drops_the_token(self):
+        token = Token.objects.create(user=self.user)
+        session = DeviceSession.objects.create(
+            user=self.user, device_name='Some Browser', ip_address='198.51.100.7')
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+        response = self.client.post(
+            reverse('security-sessions-revoke', args=[session.id]), {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(Token.objects.filter(pk=token.pk).exists())
+
+
+@NO_THROTTLE
+class VerificationCodeRegressionTests(APITestCase):
+    """BE-16: codes were predictable, unlimited-guess, and shared between the
+    password-reset and passwordless-login flows."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='codes', email='codes@example.com', password='the-original-password')
+
+    def _latest_code(self):
+        from django.core import mail
+        return re.search(r'\b(\d{6})\b', mail.outbox[-1].body).group(1)
+
+    def test_a_reset_code_cannot_be_used_to_sign_in(self):
+        self.client.post(reverse('auth-forgot-password'),
+                         {'email': 'codes@example.com'}, format='json')
+        reset_code = self._latest_code()
+
+        response = self.client.post(reverse('auth-otp-login'), {
+            'email': 'codes@example.com', 'otp': reset_code,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn('token', response.data)
+
+    def test_a_login_code_cannot_be_used_to_reset_a_password(self):
+        self.client.post(reverse('auth-request-otp'),
+                         {'email': 'codes@example.com'}, format='json')
+        login_code = self._latest_code()
+
+        response = self.client.post(reverse('auth-reset-password'), {
+            'email': 'codes@example.com', 'otp': login_code,
+            'new_password': 'a-brand-new-passphrase',
+            'confirm_password': 'a-brand-new-passphrase',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_repeated_wrong_guesses_burn_the_code(self):
+        self.client.post(reverse('auth-request-otp'),
+                         {'email': 'codes@example.com'}, format='json')
+        real_code = self._latest_code()
+
+        wrong = '000000' if real_code != '000000' else '111111'
+        for _ in range(PasswordResetOTP.MAX_ATTEMPTS):
+            self.client.post(reverse('auth-otp-login'),
+                             {'email': 'codes@example.com', 'otp': wrong}, format='json')
+
+        self.assertFalse(PasswordResetOTP.objects.filter(email='codes@example.com').exists())
+
+        # Even the genuine code is now dead — the record is gone.
+        response = self.client.post(reverse('auth-otp-login'),
+                                    {'email': 'codes@example.com', 'otp': real_code},
+                                    format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_a_valid_login_code_works(self):
+        self.client.post(reverse('auth-request-otp'),
+                         {'email': 'codes@example.com'}, format='json')
+        response = self.client.post(reverse('auth-otp-login'), {
+            'email': 'codes@example.com', 'otp': self._latest_code(),
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('token', response.data)
+
+
+@NO_THROTTLE
+class ObjectPermissionRegressionTests(APITestCase):
+    """BE-07 / BE-08: an AllowAny ModelViewSet and two unscoped create paths."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            username='owner', email='owner@example.com', password='x-long-enough-password')
+        self.other = User.objects.create_user(
+            username='other', email='other@example.com', password='x-long-enough-password')
+        self.report = ScamReport.objects.create(
+            reported_by=self.owner, url_or_email='refunds@fake-bank.example',
+            description='They asked for my bank details.')
+
+    def test_anonymous_callers_cannot_list_scam_reports(self):
+        response = self.client.get(reverse('scam-reports-list'))
+        self.assertIn(response.status_code,
+                      (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+
+    def test_anonymous_callers_cannot_delete_a_scam_report(self):
+        response = self.client.delete(reverse('scam-reports-detail', args=[self.report.id]))
+        self.assertIn(response.status_code,
+                      (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+        self.assertTrue(ScamReport.objects.filter(pk=self.report.pk).exists())
+
+    def test_a_user_cannot_read_someone_elses_scam_report(self):
+        self.client.force_authenticate(user=self.other)
+        response = self.client.get(reverse('scam-reports-detail', args=[self.report.id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_anonymous_callers_may_still_submit_a_report(self):
+        """The feature has to keep working — locking it down must not close the
+        front door it exists to provide."""
+        response = self.client.post(reverse('scam-reports-list'), {
+            'url_or_email': 'delivery@fake-courier.example',
+            'description': 'Fake delivery text message.',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_a_user_cannot_create_a_subscription_for_someone_else(self):
+        plan = SubscriptionPlan.objects.create(name='Enterprise', price=999)
+        self.client.force_authenticate(user=self.other)
+        response = self.client.post(reverse('subscriptions-list'), {
+            'user': self.owner.id, 'plan': plan.id, 'status': 'active',
+        }, format='json')
+        if response.status_code == status.HTTP_201_CREATED:
+            created = UserSubscription.objects.get(pk=response.data['id'])
+            self.assertEqual(created.user_id, self.other.id,
+                             'subscription was attributed to the user named in the payload')
+
+    def test_invoices_cannot_be_forged(self):
+        self.client.force_authenticate(user=self.other)
+        response = self.client.post(reverse('invoices-list'), {
+            'user': self.other.id, 'amount': 0, 'status': 'paid',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+@NO_THROTTLE
+class ScanInputValidationTests(APITestCase):
+    """FE-04 / BE-19 / BE-23: the scanners scored anything they were given."""
+
+    def test_url_scanner_rejects_input_that_is_not_a_link(self):
+        for junk in ('hello world', 'notadomain', 'javascript:alert(1)', 'data:text/html,x'):
+            response = self.client.post(reverse('analyze-url'), {'url': junk}, format='json')
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, junk)
+            self.assertNotIn('risk_score', response.data, junk)
+
+    def test_url_scanner_still_accepts_a_real_link(self):
+        response = self.client.post(reverse('analyze-url'),
+                                    {'url': 'http://paypa1-verify.xyz/signin'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('risk_score', response.data)
+
+    def test_text_scanner_rejects_an_oversized_body(self):
+        response = self.client.post(reverse('analyze-text'),
+                                    {'text': 'a' * 50000}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+
+    def test_screenshot_scanner_rejects_a_renamed_non_image(self):
+        """A filename extension is a claim, not evidence."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        payload = SimpleUploadedFile('totally-a-screenshot.png',
+                                     b'MZ\x90\x00this is a windows executable',
+                                     content_type='image/png')
+        response = self.client.post(reverse('analyze-screenshot'),
+                                    {'image': payload}, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+@NO_THROTTLE
+class InternalNoteVisibilityTests(APITestCase):
+    """BE-18: staff-only notes were serialized to the customer."""
+
+    def test_a_customer_does_not_see_internal_replies(self):
+        customer = User.objects.create_user(
+            username='cust', email='cust@example.com', password='x-long-enough-password')
+        agent = User.objects.create_user(
+            username='agent', email='agent@example.com',
+            password='x-long-enough-password', is_staff=True)
+
+        ticket = SupportTicket.objects.create(customer=customer, subject='Help please')
+        TicketReply.objects.create(ticket=ticket, sender=agent,
+                                   content='Visible answer', is_internal=False)
+        TicketReply.objects.create(ticket=ticket, sender=agent,
+                                   content='SECRET internal note', is_internal=True)
+
+        self.client.force_authenticate(user=customer)
+        response = self.client.get(reverse('tickets-detail', args=[ticket.id]))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('SECRET internal note', str(response.data))
+
+        self.client.force_authenticate(user=agent)
+        staff_view = self.client.get(reverse('tickets-detail', args=[ticket.id]))
+        self.assertIn('SECRET internal note', str(staff_view.data))
+
+
+@NO_THROTTLE
+class CredentialStorageTests(APITestCase):
+    """BE-11: third-party credentials were plain columns, and the config
+    endpoint handed them straight back to the browser."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='creds', email='creds@example.com', password='x-long-enough-password')
+        self.client.force_authenticate(user=self.user)
+
+    def test_stored_credentials_are_encrypted_at_rest(self):
+        from django.db import connection
+
+        config, _ = UserIntegration.objects.get_or_create(user=self.user)
+        config.twilio_token = 'super-secret-twilio-token'
+        config.save()
+
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT twilio_token FROM api_userintegration WHERE user_id = %s',
+                           [self.user.id])
+            raw = cursor.fetchone()[0]
+
+        self.assertNotIn('super-secret-twilio-token', raw)
+        self.assertTrue(raw.startswith('enc$v1$'))
+
+        # ...and still readable through the ORM.
+        config.refresh_from_db()
+        self.assertEqual(config.twilio_token, 'super-secret-twilio-token')
+
+    def test_the_config_endpoint_does_not_return_secrets(self):
+        config, _ = UserIntegration.objects.get_or_create(user=self.user)
+        config.openai_api_key = 'sk-do-not-leak-me'
+        config.save()
+
+        response = self.client.get(reverse('integrations-config'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn('sk-do-not-leak-me', str(response.data))
+        self.assertTrue(response.data['openai_api_key_configured'])
+
+    def test_a_partial_update_does_not_wipe_other_credentials(self):
+        config, _ = UserIntegration.objects.get_or_create(user=self.user)
+        config.openai_api_key = 'sk-keep-me'
+        config.twilio_sid = 'AC123'
+        config.save()
+
+        self.client.post(reverse('integrations-config'), {'twilio_sid': 'AC999'}, format='json')
+
+        config.refresh_from_db()
+        self.assertEqual(config.twilio_sid, 'AC999')
+        self.assertEqual(config.openai_api_key, 'sk-keep-me')
+
+
+@NO_THROTTLE
+class OAuthStateTests(APITestCase):
+    """BE-09 / BE-10: `state` was minted and never checked, and the callback
+    could never actually store a connection."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='oauth', email='oauth@example.com', password='x-long-enough-password')
+        self.provider = OAuthProvider.objects.create(
+            name='Gmail', category='email', is_active=True)
+
+    def test_the_callback_requires_authentication(self):
+        response = self.client.post(reverse('oauth-callback'),
+                                    {'code': 'x', 'state': 'y'}, format='json')
+        self.assertIn(response.status_code,
+                      (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+
+    def test_the_callback_rejects_an_unknown_state(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(reverse('oauth-callback'),
+                                    {'code': 'anything', 'state': 'never-issued'},
+                                    format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_the_callback_rejects_another_users_state(self):
+        victim = User.objects.create_user(
+            username='victim', email='victim@example.com', password='x-long-enough-password')
+        state = OAuthState.objects.create(
+            state='issued-to-the-attacker', user=self.user, provider=self.provider)
+
+        self.client.force_authenticate(user=victim)
+        response = self.client.post(reverse('oauth-callback'),
+                                    {'code': 'anything', 'state': state.state}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+@NO_THROTTLE
+class DeveloperApiKeyAuthenticationTests(APITestCase):
+    """BE-24: keys were issued but no authentication class consumed them."""
+
+    def test_a_developer_key_authenticates_a_request(self):
+        user = User.objects.create_user(
+            username='dev', email='dev@example.com', password='x-long-enough-password')
+        self.client.force_authenticate(user=user)
+        created = self.client.post(reverse('security-api-keys'), {'name': 'CI'}, format='json')
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        raw_key = created.data['full_key']
+
+        # A fresh client: force_authenticate(None) would disable authentication
+        # entirely rather than falling through to the header.
+        from rest_framework.test import APIClient
+        api_client = APIClient()
+        api_client.credentials(HTTP_AUTHORIZATION=f'Api-Key {raw_key}')
+        response = api_client.get(reverse('auth-profile'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['username'], 'dev')
+
+    def test_an_invalid_developer_key_is_rejected(self):
+        from rest_framework.test import APIClient
+        api_client = APIClient()
+        api_client.credentials(HTTP_AUTHORIZATION='Api-Key cs_live_not_a_real_key')
+        response = api_client.get(reverse('auth-profile'))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

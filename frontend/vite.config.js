@@ -10,9 +10,17 @@ export default defineConfig({
   ],
 
   build: {
-    // Source maps make production stack traces readable. They expose your
-    // source, so drop this to false if the code is meant to stay private.
-    sourcemap: true,
+    // No source maps in the production bundle.
+    //
+    // `dist/assets/` was shipping a .map for every chunk — complete, readable
+    // sources for the admin workspace, the auth context, and the API layer,
+    // including every endpoint path. For a security product that is a free
+    // reconnaissance pass for anyone who opens devtools.
+    //
+    // Use 'hidden' instead of false if you wire up an error tracker: it still
+    // emits the maps for upload but omits the //# sourceMappingURL comment, so
+    // browsers never fetch them.
+    sourcemap: false,
 
     rollupOptions: {
       output: {

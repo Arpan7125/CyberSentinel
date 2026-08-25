@@ -48,15 +48,18 @@ export function generatePassword(length = 20) {
   return Array.from(array, v => chars[v % chars.length]).join('');
 }
 
-export default function PasswordStrength({ password }) {
+export default function PasswordStrength({ password, id }) {
   const { score, feedback } = useMemo(() => calcStrength(password), [password]);
   const level = LEVELS[score] || LEVELS[0];
 
   if (!password) return null;
 
   return (
-    <div className="password-strength">
-      <div className="password-strength-bar">
+    // aria-live so the strength verdict is announced as the user types, rather
+    // than being a purely visual cue. The bar itself is decorative — the text
+    // below it carries the same information.
+    <div className="password-strength" id={id} aria-live="polite">
+      <div className="password-strength-bar" aria-hidden="true">
         {[0, 1, 2, 3].map(i => (
           <div
             key={i}
@@ -66,7 +69,7 @@ export default function PasswordStrength({ password }) {
         ))}
       </div>
       <span className="password-strength-text" style={{ color: level.color }}>
-        {level.label}
+        Password strength: {level.label}
       </span>
       {feedback.length > 0 && (
         <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0 0' }}>

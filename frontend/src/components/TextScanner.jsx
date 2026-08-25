@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import { scanService, api } from '../services/api';
+import { MAX_SCAN_TEXT_CHARS, validateScanText } from '../utils/validation';
 
 function RiskBadge({ level }) {
   const map = { Low: 'badge-low', Medium: 'badge-medium', High: 'badge-high', Critical: 'badge-critical' };
@@ -24,6 +25,7 @@ export default function TextScanner({ onScanComplete }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [checkedRecs, setCheckedRecs] = useState({});
+  const [error, setError] = useState('');
 
   // Twilio Emergency Alert Dispatch states
   const [alertPhone, setAlertPhone] = useState(() => localStorage.getItem('cs_twilio_to') || '');
@@ -52,10 +54,16 @@ export default function TextScanner({ onScanComplete }) {
 
   const handleScan = async (e) => {
     e.preventDefault();
-    if (!text.trim()) return;
+
+    const lengthError = validateScanText(text);
+    if (lengthError) {
+      setError(lengthError);
+      return;
+    }
 
     setLoading(true);
     setResult(null);
+    setError('');
     try {
       const data = await scanService.analyzeText({ text });
       setResult(data);
@@ -64,7 +72,9 @@ export default function TextScanner({ onScanComplete }) {
     } catch (err) {
       // Honest failure — never fabricate a plausible-looking verdict when the real
       // classifier call fails. A security tool must not silently lie about a scan result.
-      alert(err.data?.error || err.message || 'Failed to analyze text. Please try again.');
+      // Inline, not a blocking dialog: the message belongs next to the input
+      // that produced it, in the app's own styling.
+      setError(err.message || 'Failed to analyze that message.');
     } finally {
       setLoading(false);
     }
@@ -161,20 +171,38 @@ export default function TextScanner({ onScanComplete }) {
           <form onSubmit={handleScan} className="glass-card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <label htmlFor="message-input" className="form-label">RAW TELEMETRY INPUT</label>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 800 }} className="mono-display">
-                {text.length} CHARS
+              <span
+                className="mono-display"
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: text.length > MAX_SCAN_TEXT_CHARS
+                    ? 'var(--accent-red)'
+                    : 'var(--text-muted)',
+                }}
+              >
+                {text.length.toLocaleString()} / {MAX_SCAN_TEXT_CHARS.toLocaleString()} CHARS
               </span>
             </div>
             
             <textarea
               id="message-input"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => { setText(e.target.value); if (error) setError(''); }}
               placeholder="Paste email headers, communication logs, SMS texts, or alert strings here..."
               className="textarea-field"
               style={{ height: 220 }}
+              maxLength={MAX_SCAN_TEXT_CHARS}
+              aria-invalid={error ? 'true' : undefined}
+              aria-describedby={error ? 'message-input-error' : undefined}
               required
             />
+
+            {error && (
+              <p id="message-input-error" className="field-error" role="alert">
+                <span>{error}</span>
+              </p>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8 }}>
               <button

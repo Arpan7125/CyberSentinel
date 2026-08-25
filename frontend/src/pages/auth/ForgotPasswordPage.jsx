@@ -8,7 +8,6 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
-  const [devOtp, setDevOtp] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,9 +27,6 @@ export default function ForgotPasswordPage() {
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Failed to send reset code.');
-      }
-      if (data.dev_otp) {
-        setDevOtp(data.dev_otp);
       }
       setSent(true);
     } catch (err) {
@@ -57,10 +53,11 @@ export default function ForgotPasswordPage() {
 
               <form className="auth-form" onSubmit={handleSubmit}>
                 <div className="auth-input-group">
-                  <label className="auth-input-label">Email Address</label>
+                  <label htmlFor="forgot-email" className="auth-input-label">Email Address</label>
                   <div className="auth-input-wrapper">
-                    <span className="auth-input-icon">📧</span>
+                    <span className="auth-input-icon" aria-hidden="true">📧</span>
                     <input
+                      id="forgot-email"
                       type="email"
                       className="auth-input"
                       placeholder="you@company.com"
@@ -89,12 +86,6 @@ export default function ForgotPasswordPage() {
               <p className="auth-subtitle">
                 We've sent a 6-digit verification code to <strong style={{ color: 'var(--text-primary)' }}>{email}</strong>.
               </p>
-
-              {devOtp && (
-                <div style={{ padding: 12, background: 'rgba(175,82,222,0.1)', color: '#AF52DE', border: '1px solid rgba(175,82,222,0.2)', borderRadius: 6, fontSize: 13, fontWeight: 700, margin: '16px 0', textAlign: 'center' }}>
-                  Dev Mode Code: {devOtp}
-                </div>
-              )}
 
               <button className="auth-submit" onClick={() => navigate(`/reset-password?email=${encodeURIComponent(email)}`)} style={{ marginTop: 16 }}>
                 Enter Code & Reset Password →

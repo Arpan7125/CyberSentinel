@@ -14,16 +14,29 @@ const SYNC_STEPS = [
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const rawState = searchParams.get('state') || '';
-  const providerId = searchParams.get('provider') || rawState.split(':')[0];
+  // The state is opaque now — it identifies a pending authorization the server
+  // recorded when the flow started, and the server resolves the provider from
+  // it. It used to encode the provider id as a "<id>:<random>" prefix and was
+  // never verified on the way back.
+  const state = searchParams.get('state') || '';
   const code = searchParams.get('code');
+  const providerError = searchParams.get('error');
   
   const [currentStep, setCurrentStep] = useState(0);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (!providerId || !code) {
-      setError('Invalid authorization redirect. Missing parameters.');
+    if (providerError) {
+      setError(
+        providerError === 'access_denied'
+          ? 'You cancelled the connection. Nothing was changed.'
+          : "Google couldn't complete the connection. Try again.",
+      );
+      return;
+    }
+
+    if (!state || !code) {
+      setError('This authorization link is incomplete. Start the connection again from Integrations.');
       return;
     }
 
@@ -33,13 +46,13 @@ export default function OAuthCallbackPage() {
         await new Promise(r => setTimeout(r, 800));
         setCurrentStep(1);
         
-        // Exchange code for token
-        const res = await integrationsService.oauthCallback(providerId, code);
+        // Exchange the code. The server verifies `state` against the pending
+        // authorization it issued, then stores the provider tokens itself —
+        // none of them come back to the browser, so there is nothing to put in
+        // localStorage.
+        const res = await integrationsService.oauthCallback(code, state);
         if (res && res.email) {
           localStorage.setItem('connected_gmail_email', res.email);
-        }
-        if (res && res.access_token) {
-          localStorage.setItem('connected_gmail_token', res.access_token);
         }
         
         // Step 1: Connect
@@ -66,7 +79,7 @@ export default function OAuthCallbackPage() {
     };
 
     processOAuth();
-  }, [providerId, code, navigate]);
+  }, [state, code, providerError, navigate]);
 
   if (error) {
     return (
