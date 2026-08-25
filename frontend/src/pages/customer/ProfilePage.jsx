@@ -18,7 +18,6 @@ export default function ProfilePage() {
     confirmPassword: ''
   });
 
-  const [mfaEnabled, setMfaEnabled] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [pwdStatus, setPwdStatus] = useState({ type: '', message: '' });
 
@@ -50,9 +49,17 @@ export default function ProfilePage() {
         full_name: personalForm.fullName,
         email: personalForm.email,
         company: personalForm.company,
+        // `phone` was missing here, so anything typed into the Phone Number
+        // input was silently discarded on save.
+        phone: personalForm.phone,
       });
       setStatus({ type: 'success', message: res.message || 'Profile details successfully updated.' });
       if (res.user) {
+        setPersonalForm(p => ({
+          ...p,
+          phone: res.user.phone ?? p.phone,
+          company: res.user.company ?? p.company,
+        }));
         setUser(prev => ({
           ...prev,
           fullName: res.user.full_name,
@@ -70,8 +77,21 @@ export default function ProfilePage() {
     e.preventDefault();
     setPwdStatus({ type: '', message: '' });
 
+    // Mirror the server's rules so an obviously-bad password is caught before a
+    // round-trip. The server still re-checks with Django's full validator set —
+    // this is a convenience, never the enforcement point.
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       setPwdStatus({ type: 'error', message: 'New passwords do not match.' });
+      return;
+    }
+
+    if (passwordForm.newPassword.length < 8) {
+      setPwdStatus({ type: 'error', message: 'New password must be at least 8 characters.' });
+      return;
+    }
+
+    if (passwordForm.newPassword === passwordForm.currentPassword) {
+      setPwdStatus({ type: 'error', message: 'New password must be different from your current password.' });
       return;
     }
 
@@ -231,25 +251,15 @@ export default function ProfilePage() {
         </form>
       </div>
 
-      {/* Multi-Factor Authentication Card */}
-      <div className="glass-card" style={{ padding: 28 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h3 className="section-title">Two-Factor Authentication (2FA)</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Secure login steps using standard authenticator app codes (Google Authenticator, Authy, etc.)
-            </p>
-          </div>
-          <div>
-            <button
-              className={`btn-pub btn-pub-sm ${mfaEnabled ? 'btn-pub-danger' : 'btn-pub-primary'}`}
-              onClick={() => setMfaEnabled(!mfaEnabled)}
-            >
-              {mfaEnabled ? 'Disable 2FA' : 'Enable 2FA'}
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* The Two-Factor Authentication card that used to sit here was removed.
+          Its button only ran setMfaEnabled(!mfaEnabled) — it flipped a local
+          React state flag and nothing else. There is no TOTP library, no enrol
+          or verify endpoint, and nothing ever wrote UserProfile.mfa_enabled, so
+          a user who clicked "Enable 2FA" saw the button say "Disable 2FA" and
+          believed their account was protected when it was not. A security
+          control that only pretends to be on is worse than none at all.
+          Sign-in is hardened instead through Google / Microsoft OAuth and the
+          one-time-code login. */}
     </div>
   );
 }

@@ -23,6 +23,8 @@ import logging
 import secrets
 from datetime import timedelta
 
+import phonenumbers
+
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
@@ -464,6 +466,13 @@ class ProfileView(APIView):
         payload['date_joined'] = user.date_joined.strftime('%Y-%m-%d')
         payload['full_name'] = f"{user.first_name} {user.last_name}".strip()
         payload['is_new_user'] = (timezone.now() - user.date_joined) < timedelta(minutes=5)
+
+        # company and phone were never returned, so the profile form's inputs
+        # came back empty on every reload even when a value was saved.
+        from .models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        payload['company'] = profile.company
+        payload['phone'] = profile.phone
         return Response(payload, status=status.HTTP_200_OK)
 
     def patch(self, request):
@@ -490,14 +499,42 @@ class ProfileView(APIView):
 
         user.save()
 
-        if 'company' in data:
+        if 'company' in data or 'phone' in data:
             from .models import UserProfile
             profile, _ = UserProfile.objects.get_or_create(user=user)
-            profile.company = (data['company'] or '').strip()[:150]
-            profile.save(update_fields=['company'])
+            changed = []
+
+            if 'company' in data:
+                profile.company = (data['company'] or '').strip()[:150]
+                changed.append('company')
+
+            if 'phone' in data:
+                # The form used to accept anything here and then drop it: the
+                # frontend never sent the value and no field existed to store
+                # it, so "add" or any other junk simply vanished on save.
+                raw_phone = (data['phone'] or '').strip()
+                if raw_phone:
+                    try:
+                        parsed = phonenumbers.parse(raw_phone, 'US')
+                        if not phonenumbers.is_valid_number(parsed):
+                            raise ValueError
+                        raw_phone = phonenumbers.format_number(
+                            parsed, phonenumbers.PhoneNumberFormat.E164)
+                    except (phonenumbers.NumberParseException, ValueError):
+                        return Response(
+                            {'error': 'Enter a valid phone number, including the country code.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+                profile.phone = raw_phone[:32]
+                changed.append('phone')
+
+            profile.save(update_fields=changed)
 
         payload = user_payload(user)
         payload['full_name'] = f"{user.first_name} {user.last_name}".strip()
+        from .models import UserProfile as _UP
+        _profile, _ = _UP.objects.get_or_create(user=user)
+        payload['company'] = _profile.company
+        payload['phone'] = _profile.phone
         return Response({'message': 'Profile updated successfully.', 'user': payload},
                         status=status.HTTP_200_OK)
 
