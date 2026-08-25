@@ -185,17 +185,32 @@ production admin account was created.
 
 Ordered by how much they matter.
 
-### 🔴 The admin system can be self-provisioned by anyone
+### ✅ FIXED — admin privilege escalation
 
-`AdminRegisterView` is unauthenticated **and** returns the generated admin auth
-key in its response whenever the email send fails — which it currently always
-does. Anyone who can reach the API can therefore create themselves an admin
-account. Additionally, `AdminLoginView` contains hardcoded master keys in the
-source, and the source is public.
+*Resolved in commit `4688898`. Recorded here because it explains why the admin
+flow works the way it does now.*
 
-**Not yet fixed.** Recommended: require an existing superuser (or a one-time
-bootstrap secret from an env var) to create admins, stop returning the key in
-the response, and delete the hardcoded keys.
+There used to be several ways for an anonymous caller to obtain a superuser
+account: `AdminRegisterView` was public and returned the generated admin key in
+its response whenever the email send failed (which it always did),
+`AdminLoginView` contained hardcoded master keys in public source, admin login
+accepted *any* key once the address belonged to someone flagged as staff, and
+registration honoured a client-supplied `role`. All are closed:
+
+- `AdminRegisterView` now requires `IsAdminUser` — **an existing admin must
+  create the next one.**
+- The hardcoded master keys are gone; `test_hardcoded_master_keys_no_longer_work`
+  asserts they are rejected.
+- Admin auth keys are stored **hashed**, and the raw key is shown exactly once
+  to the admin doing the provisioning.
+- Signup ignores a requested `role`.
+- Password-reset and OTP codes are stored hashed and never echoed in a response.
+
+⚠️ **Consequence:** there is no public bootstrap path any more. Keep the
+existing admin key safe — migration `0015` hashes the current key in place, so
+keys issued before the migration continue to work, but a lost key cannot be
+recovered from the database. Recover via `manage.py createsuperuser` (or the
+Django shell) on the server if needed.
 
 ### 🔴 Rotate the Gmail app-password
 
@@ -219,12 +234,21 @@ Cloud project `491720850718`. OAuth connection succeeding is not sufficient.
 Also note `gmail.readonly` is a *restricted* scope: on an unverified app the
 consent screen shows a warning and tokens expire after roughly 7 days.
 
-### 🟡 API keys are stored in plain text
+### ✅ FIXED — credentials at rest
 
-Per-user keys saved through the admin "API Integrations" page are plain
-`CharField`s, not encrypted. Treat database access as equivalent to holding
-those keys. (The page used to claim AES-256 encryption; that text has been
-corrected.)
+*Resolved in commit `4688898`.* Per-user third-party credentials are no longer
+plain text. Two mechanisms, deliberately separated (see `api/crypto.py`):
+
+- Secrets the server only ever **compares** — developer API keys, admin auth
+  keys — are **hashed** (SHA-256). They can never be read back.
+- Secrets the server must **replay** to a third party — Twilio auth tokens,
+  OAuth refresh tokens, a customer's own API keys — are **encrypted at rest**
+  with Fernet (AES-128-CBC + HMAC-SHA256) via the custom fields in
+  `api/fields.py`, because they have to be sent to Twilio or Google later and
+  therefore cannot be hashed.
+
+Encryption happens in `get_prep_value` / `from_db_value`, so application code
+reads and writes plain strings. Migration `0015` converts existing rows.
 
 ---
 
@@ -270,8 +294,9 @@ fabricates activity.
 
 ## 10. Open items
 
+- [x] ~~Lock down admin self-registration and remove the hardcoded master keys~~ — done in `4688898`
+- [x] ~~Encrypt stored per-user API keys~~ — done in `4688898`
 - [ ] Rotate the exposed Gmail app-password
-- [ ] Lock down admin self-registration and remove the hardcoded master keys
 - [ ] Enable the Gmail API in Google Cloud project `491720850718`
 - [ ] Add `http://localhost:5173` to the Google OAuth authorized origins
 - [ ] Fix the admin-key email sender address
@@ -279,7 +304,11 @@ fabricates activity.
       the throwaway accounts created while testing (`depcheck*`, `smoke*`,
       `uismoke*`, `probe_admin_*`)
 - [ ] Upgrade the Postgres plan before the 30-day free window expires
-- [ ] Consider encrypting stored per-user API keys
+- [ ] Set an explicit `FIELD_ENCRYPTION_KEY` in the Render environment. Without
+      it, `api/crypto.py` derives the key from `SECRET_KEY` via HKDF — which
+      works, but means **rotating `SECRET_KEY` would make every encrypted
+      credential permanently unreadable.** Setting it explicitly decouples the
+      two.
 
 ### Possible future work
 
