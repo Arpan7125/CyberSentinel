@@ -65,8 +65,7 @@ const CustomerNotifications = lazy(() => import('./pages/customer/NotificationsP
 const CustomerBilling = lazy(() => import('./pages/customer/BillingPage'));
 const EmailProtectionPage = lazy(() => import('./pages/customer/EmailProtectionPage'));
 const PhoneScamPage = lazy(() => import('./pages/customer/PhoneScamPage'));
-const WhatsAppAnalyzerPage = lazy(() => import('./pages/customer/WhatsAppAnalyzerPage'));
-const SmsAnalyzerPage = lazy(() => import('./pages/customer/SmsAnalyzerPage'));
+const MessageAnalyzerPage = lazy(() => import('./pages/customer/MessageAnalyzerPage'));
 const UrlScannerPage = lazy(() => import('./pages/customer/UrlScannerPage'));
 const FileScannerPage = lazy(() => import('./pages/customer/FileScannerPage'));
 const ScreenshotAnalyzerPage = lazy(() => import('./pages/customer/ScreenshotAnalyzerPage'));
@@ -192,8 +191,11 @@ function AppContent() {
             <Route path="settings" element={<CustomerSettings />} />
             <Route path="email-scanner" element={<EmailProtectionPage />} />
             <Route path="phone-lookup" element={<PhoneScamPage />} />
-            <Route path="whatsapp-analyzer" element={<WhatsAppAnalyzerPage />} />
-            <Route path="sms-analyzer" element={<SmsAnalyzerPage />} />
+            <Route path="message-analyzer" element={<MessageAnalyzerPage />} />
+            {/* The SMS and WhatsApp analyzers were merged into one page. Both
+                old paths redirect so existing links and bookmarks still work. */}
+            <Route path="whatsapp-analyzer" element={<Navigate to="/dashboard/message-analyzer" replace />} />
+            <Route path="sms-analyzer" element={<Navigate to="/dashboard/message-analyzer" replace />} />
             <Route path="url-scanner" element={<UrlScannerPage />} />
             <Route path="file-scanner" element={<FileScannerPage />} />
             <Route path="screenshot-scanner" element={<ScreenshotAnalyzerPage />} />

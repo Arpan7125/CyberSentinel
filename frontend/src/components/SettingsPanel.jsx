@@ -222,12 +222,12 @@ export default function SettingsPanel() {
               <div style={{ marginBottom: 14 }}>
                 <strong style={{ fontSize: 12.5, display: 'block', marginBottom: 2 }}>SMS scanning</strong>
                 <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                  Automatic inbox sync is not available. Paste a suspicious message into the SMS
-                  analyser to have it scored.
+                  Automatic inbox sync is not available. Paste a suspicious message into the
+                  message analyser to have it scored.
                 </span>
               </div>
-              <Link to="/dashboard/sms-analyzer" className="ios-btn" style={{ textDecoration: 'none', alignSelf: 'flex-start' }}>
-                Open SMS analyser
+              <Link to="/dashboard/message-analyzer" className="ios-btn" style={{ textDecoration: 'none', alignSelf: 'flex-start' }}>
+                Open message analyser
               </Link>
             </div>
           </div>

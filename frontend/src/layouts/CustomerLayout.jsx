@@ -3,7 +3,7 @@ import { Outlet, Link, NavLink, useNavigate, useLocation } from 'react-router-do
 import { useAuth } from '../AuthContext';
 import { useNotifications } from '../NotificationContext';
 import Breadcrumbs from '../components/navigation/Breadcrumbs';
-import { Shield, FileText, KeyRound, Mail, Link2, FolderSearch, Image, Phone, MessageCircle, MessageSquare, Globe, Flag, Newspaper, User, Settings, LogOut, PanelLeftClose, PanelLeft, Bell, ShieldCheck } from 'lucide-react';
+import { Shield, FileText, KeyRound, Mail, Link2, FolderSearch, Image, Phone, MessageSquare, Globe, Flag, Newspaper, User, Settings, LogOut, PanelLeftClose, PanelLeft, Bell, ShieldCheck } from 'lucide-react';
 
 const CUSTOMER_NAV = [
   {
@@ -27,8 +27,7 @@ const CUSTOMER_NAV = [
     title: 'Communication',
     items: [
       { to: '/dashboard/phone-lookup', icon: Phone, label: 'Phone Lookup' },
-      { to: '/dashboard/whatsapp-analyzer', icon: MessageCircle, label: 'WhatsApp Analyzer' },
-      { to: '/dashboard/sms-analyzer', icon: MessageSquare, label: 'SMS Analyzer' },
+      { to: '/dashboard/message-analyzer', icon: MessageSquare, label: 'Message Analyzer' },
     ]
   },
   {
