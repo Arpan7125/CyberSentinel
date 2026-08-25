@@ -272,6 +272,24 @@ advisories.
 **`VITE_*` changes need a redeploy.** They are compiled into the bundle. Editing
 the value in Vercel without redeploying changes nothing.
 
+**Never add a `comment` key (or any extra property) to `vercel.json`.** Vercel
+validates it against a strict schema and rejects the whole deployment *before
+the build starts* — the failure shows as `ERROR` with **no build logs at all**,
+which looks like an infrastructure problem rather than a config typo. The exact
+message is `headers[0].headers[1] should NOT have additional property
+'comment'`. JSON has no comment syntax, so notes about the config belong here,
+not in the file.
+
+**Why the Content-Security-Policy in `vercel.json` is written the way it is.**
+The auth token lives in `localStorage`, so a single XSS anywhere in the app
+would exfiltrate it; the CSP is what stops injected markup from loading or
+reaching an attacker-controlled origin. Two things to know before editing it:
+
+- `'unsafe-inline'` on `style-src` is required by the inline `style` props still
+  present in the components. It can be removed once those move to classes.
+- `connect-src` must list the API origin — **update it if `VITE_API_URL`
+  changes**, or every API call will be blocked by the browser.
+
 **Empty admin screens are usually empty data, not bugs.** A fresh database has
 no scans, so the dashboard shows a designed "standing by" state. This app never
 fabricates activity.
