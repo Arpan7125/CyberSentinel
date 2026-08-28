@@ -12,7 +12,7 @@ from .analytics_views import (
     AdminAnalyticsView, AdminRevenueView, AdminThreatCenterView,
     UserInsightsView, UsageMetricsView, ThreatForecastView,
 )
-from .auth_views import RegisterView, LoginView, LogoutView, ProfileView, ForgotPasswordView, ResetPasswordView, GoogleLoginView, MicrosoftLoginView, AdminRegisterView, AdminLoginView, RequestOTPView, OTPLoginView, ChangePasswordView
+from .auth_views import RegisterView, LoginView, LogoutView, ProfileView, ForgotPasswordView, ResetPasswordView, GoogleLoginView, MicrosoftLoginView, AdminRegisterView, AdminLoginView, RequestOTPView, OTPLoginView, ChangePasswordView, DataConsentView
 from .subscription_views import SubscribeView, UnsubscribeView, SubscriberListView
 from .chat_views import ChatbotView
 from .intel_views import ThreatIntelFeedView
@@ -67,6 +67,7 @@ urlpatterns = [
     path('auth/login/', LoginView.as_view(), name='auth-login'),
     path('auth/logout/', LogoutView.as_view(), name='auth-logout'),
     path('auth/profile/', ProfileView.as_view(), name='auth-profile'),
+    path('auth/data-consent/', DataConsentView.as_view(), name='auth-data-consent'),
     path('auth/change-password/', ChangePasswordView.as_view(), name='auth-change-password'),
     path('auth/forgot-password/', ForgotPasswordView.as_view(), name='auth-forgot-password'),
     path('auth/reset-password/', ResetPasswordView.as_view(), name='auth-reset-password'),

@@ -39,7 +39,8 @@ from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AdminAuthKey, DeviceSession, LoginHistory, PasswordResetOTP, UserIntegration
+from .models import (DATA_CONSENT_VERSION, AdminAuthKey, DeviceSession, LoginHistory,
+                     PasswordResetOTP, UserIntegration, UserProfile)
 from .throttles import AuthThrottle
 
 logger = logging.getLogger('api')
@@ -469,10 +470,11 @@ class ProfileView(APIView):
 
         # company and phone were never returned, so the profile form's inputs
         # came back empty on every reload even when a value was saved.
-        from .models import UserProfile
         profile, _ = UserProfile.objects.get_or_create(user=user)
         payload['company'] = profile.company
         payload['phone'] = profile.phone
+        payload['data_consent'] = profile.data_consent
+        payload['needs_data_consent'] = profile.needs_data_consent()
         return Response(payload, status=status.HTTP_200_OK)
 
     def patch(self, request):
@@ -500,7 +502,6 @@ class ProfileView(APIView):
         user.save()
 
         if 'company' in data or 'phone' in data:
-            from .models import UserProfile
             profile, _ = UserProfile.objects.get_or_create(user=user)
             changed = []
 
@@ -531,8 +532,7 @@ class ProfileView(APIView):
 
         payload = user_payload(user)
         payload['full_name'] = f"{user.first_name} {user.last_name}".strip()
-        from .models import UserProfile as _UP
-        _profile, _ = _UP.objects.get_or_create(user=user)
+        _profile, _ = UserProfile.objects.get_or_create(user=user)
         payload['company'] = _profile.company
         payload['phone'] = _profile.phone
         return Response({'message': 'Profile updated successfully.', 'user': payload},
@@ -545,6 +545,49 @@ class ProfileView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
         user.delete()
         return Response({'message': 'Account deleted successfully.'}, status=status.HTTP_200_OK)
+
+
+class DataConsentView(APIView):
+    """
+    The user's answer to "may CyberSentinel process the details you submit?".
+
+    GET reports the current answer and whether the user still needs to be asked.
+    POST records 'granted' or 'declined' against the wording they actually saw.
+    Both answers are stored — a decline is a decision, not an absence of one, and
+    it is honoured by `consent.scan_log_user`.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _payload(self, profile):
+        return {
+            'status': profile.data_consent,
+            'decided_at': profile.data_consent_at.isoformat() if profile.data_consent_at else None,
+            'agreed_version': profile.data_consent_version or None,
+            'current_version': DATA_CONSENT_VERSION,
+            'needs_decision': profile.needs_data_consent(),
+        }
+
+    def get(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        return Response(self._payload(profile), status=status.HTTP_200_OK)
+
+    def post(self, request):
+        decision = (request.data.get('decision') or '').strip().lower()
+        if decision not in ('granted', 'declined'):
+            return Response(
+                {'error': "Send a decision of either 'granted' or 'declined'."},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile.data_consent = decision
+        profile.data_consent_at = timezone.now()
+        # Pin the answer to the wording shown. If the wording later changes, the
+        # stored version no longer matches and the user is asked again.
+        profile.data_consent_version = DATA_CONSENT_VERSION
+        profile.save(update_fields=['data_consent', 'data_consent_at', 'data_consent_version'])
+
+        return Response(self._payload(profile), status=status.HTTP_200_OK)
 
 
 class ChangePasswordView(APIView):

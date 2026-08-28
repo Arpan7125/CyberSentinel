@@ -239,12 +239,24 @@ class UserIntegration(models.Model):
 
 # ── 6. SAAS ROLES & SYSTEM MODULES (NEW) ──────────────────────────────────────
 
+# Bump this whenever the wording of what the user is agreeing to changes in a
+# way that matters. Anyone whose recorded consent predates the current version
+# is asked again rather than being held to terms they never saw.
+DATA_CONSENT_VERSION = '2026-08-28'
+
+
 class UserProfile(models.Model):
     ROLE_CHOICES = (
         ('visitor', 'Visitor'),
         ('customer', 'Customer'),
         ('enterprise', 'Enterprise'),
         ('admin', 'Administrator'),
+    )
+
+    DATA_CONSENT_CHOICES = (
+        ('pending', 'Not yet asked'),
+        ('granted', 'Granted'),
+        ('declined', 'Declined'),
     )
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
@@ -255,6 +267,19 @@ class UserProfile(models.Model):
     mfa_secret = EncryptedCharField(max_length=32, blank=True, default='')
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Whether the user agreed to CyberSentinel processing the details and scan
+    # content they submit. Kept here rather than in the browser so the answer
+    # survives a cleared cache or a new device, and so there is an actual record
+    # of what was agreed and when. 'pending' means never asked.
+    data_consent = models.CharField(max_length=10, choices=DATA_CONSENT_CHOICES, default='pending')
+    data_consent_at = models.DateTimeField(null=True, blank=True)
+    data_consent_version = models.CharField(max_length=20, blank=True, default='')
+
+    def needs_data_consent(self):
+        """True when the user has never answered, or answered an older wording."""
+        return (self.data_consent == 'pending'
+                or self.data_consent_version != DATA_CONSENT_VERSION)
 
     def __str__(self):
         return f"{self.user.username} ({self.role})"

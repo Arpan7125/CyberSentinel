@@ -3,6 +3,7 @@ import { Outlet, Link, NavLink, useNavigate, useLocation } from 'react-router-do
 import { useAuth } from '../AuthContext';
 import { useNotifications } from '../NotificationContext';
 import Breadcrumbs from '../components/navigation/Breadcrumbs';
+import DataConsentDialog from '../components/ui/DataConsentDialog';
 import { Shield, FileText, KeyRound, Mail, Link2, FolderSearch, Image, Phone, MessageSquare, Globe, Flag, Newspaper, User, Settings, LogOut, PanelLeftClose, PanelLeft, Bell, ShieldCheck } from 'lucide-react';
 
 const CUSTOMER_NAV = [
@@ -251,6 +252,11 @@ export default function CustomerLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Asked once per account, on the first visit to the console after signing
+          in. Mounted at the layout so it appears wherever the user lands, not
+          only on the dashboard index. */}
+      <DataConsentDialog />
     </div>
   );
 }

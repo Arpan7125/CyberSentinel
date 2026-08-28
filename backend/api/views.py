@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 
 from .models import ScanLog, QuizQuestion
+from .consent import scan_log_user
 from .serializers import ScanLogSerializer, QuizQuestionSerializer
 from .ml_classifier import classifier
 from .url_analyzer import analyze_url, validate_url_shape
@@ -94,7 +95,7 @@ class TextAnalysisView(APIView):
         
         result = classifier.analyze_text(text)
         
-        user = request.user if request.user and request.user.is_authenticated else None
+        user = scan_log_user(request)
         # Log to database
         ScanLog.objects.create(
             user=user,
@@ -132,7 +133,7 @@ class UrlAnalysisView(APIView):
 
         result = analyze_url(url)
         
-        user = request.user if request.user and request.user.is_authenticated else None
+        user = scan_log_user(request)
         # Log to database
         ScanLog.objects.create(
             user=user,
@@ -213,7 +214,7 @@ class ScreenshotAnalysisView(APIView):
                     dedup_indicators.append(ind)
             text_result["threat_indicators"] = dedup_indicators
 
-            user = request.user if request.user and request.user.is_authenticated else None
+            user = scan_log_user(request)
             # Log to database
             ScanLog.objects.create(
                 user=user,
@@ -472,7 +473,7 @@ class FileAnalysisView(APIView):
                 logger.exception("VirusTotal lookup failed for %s", file_hash)
                 sandbox_status = "Not scanned (could not reach VirusTotal)"
 
-        user = request.user if request.user and request.user.is_authenticated else None
+        user = scan_log_user(request)
         ScanLog.objects.create(
             user=user,
             scan_type='FILE',
@@ -684,7 +685,7 @@ class PhoneAnalysisView(APIView):
         else:
             risk_level = "Low"
 
-        user = request.user if request.user and request.user.is_authenticated else None
+        user = scan_log_user(request)
         ScanLog.objects.create(
             user=user,
             scan_type='PHONE',

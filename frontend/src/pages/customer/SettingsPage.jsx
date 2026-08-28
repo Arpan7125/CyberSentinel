@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../AuthContext';
 import { authService } from '../../services/api';
 
 export default function SettingsPage() {
   const { logout } = useAuth();
+  const [consent, setConsent] = useState(null);
+  const [consentSaving, setConsentSaving] = useState(false);
+  const [consentError, setConsentError] = useState('');
   const [theme, setTheme] = useState(() => localStorage.getItem('cs_theme') || 'light');
   const [lang, setLang] = useState('English');
   const [retention, setRetention] = useState('30');
@@ -12,6 +15,26 @@ export default function SettingsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    authService.dataConsent()
+      .then(res => { if (!cancelled) setConsent(res); })
+      .catch(() => { if (!cancelled) setConsentError('Could not load your data-sharing choice.'); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleConsentChange = async (decision) => {
+    setConsentSaving(true);
+    setConsentError('');
+    try {
+      setConsent(await authService.setDataConsent(decision));
+    } catch (err) {
+      setConsentError(err.message || 'Could not save your choice. Try again.');
+    } finally {
+      setConsentSaving(false);
+    }
+  };
 
   const handleThemeChange = (newTheme) => {
     setTheme(newTheme);
@@ -85,6 +108,61 @@ export default function SettingsPage() {
             <option key={l} value={l}>{l}</option>
           ))}
         </select>
+      </div>
+
+      {/* Data-sharing consent — the answer given in the sign-in dialog, shown
+          here so it can actually be changed, as that dialog promises. */}
+      <div className="glass-card" style={{ padding: 28 }}>
+        <h3 className="section-title" style={{ marginBottom: 12 }}>Data Sharing</h3>
+
+        {consent === null && !consentError && (
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Loading your choice…</p>
+        )}
+
+        {consent && (
+          <>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 16 }}>
+              {consent.status === 'granted'
+                ? 'You agreed to CyberSentinel processing your account details and the content you submit to the scanners. Your scans are filed under your account and appear in your reports.'
+                : consent.status === 'declined'
+                  ? 'You declined. The scanners still work, but results are not linked to your account, so your dashboard and reports will stay empty.'
+                  : 'You have not answered yet. You will be asked the next time you open the console.'}
+            </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span
+                style={{
+                  padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                  background: consent.status === 'granted' ? 'rgba(50,215,75,0.12)' : 'var(--bg-hover)',
+                  color: consent.status === 'granted' ? '#32D74B' : 'var(--text-secondary)',
+                }}
+              >
+                {consent.status === 'granted' ? 'Allowed' : consent.status === 'declined' ? 'Not allowed' : 'Not answered'}
+              </span>
+
+              {consent.decided_at && (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  Last updated {new Date(consent.decided_at).toLocaleDateString()}
+                </span>
+              )}
+
+              <button
+                className="btn-pub btn-pub-secondary btn-pub-sm"
+                onClick={() => handleConsentChange(consent.status === 'granted' ? 'declined' : 'granted')}
+                disabled={consentSaving}
+                style={{ marginLeft: 'auto' }}
+              >
+                {consentSaving
+                  ? 'Saving…'
+                  : consent.status === 'granted' ? 'Withdraw consent' : 'Give consent'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {consentError && (
+          <p className="field-error" role="alert" style={{ marginTop: 12 }}><span>{consentError}</span></p>
+        )}
       </div>
 
       {/* Privacy and Data Retention */}
