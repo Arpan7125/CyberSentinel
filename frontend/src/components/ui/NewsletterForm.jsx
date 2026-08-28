@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { validateEmail } from '../../utils/validation';
 
 export default function NewsletterForm({ variant = 'inline' }) {
   const [email, setEmail] = useState('');
@@ -7,9 +8,10 @@ export default function NewsletterForm({ variant = 'inline' }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const emailError = validateEmail(email);
+    if (emailError) {
       setStatus('error');
-      setMessage('Please enter a valid email address.');
+      setMessage(emailError);
       return;
     }
     setStatus('loading');

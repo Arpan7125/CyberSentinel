@@ -1,6 +1,7 @@
 import React from 'react';
 import SEOHead, { schemas } from '../utils/seo';
 import { useForm, FormInput, FormTextArea, FormSelect, FormCheckbox, SubmitButton, FormStatus } from '../components/ui/FormComponents';
+import { validateEmail } from '../utils/validation';
 
 export default function ContactPage() {
   const initialValues = {
@@ -15,9 +16,8 @@ export default function ContactPage() {
   const validate = (values) => {
     const errors = {};
     if (!values.fullName.trim()) errors.fullName = 'Full name is required';
-    if (!values.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
-      errors.email = 'Valid work email is required';
-    }
+    const emailError = validateEmail(values.email);
+    if (emailError) errors.email = emailError;
     if (!values.message.trim()) errors.message = 'Message content is required';
     return errors;
   };

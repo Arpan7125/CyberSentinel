@@ -6,6 +6,7 @@ import PasswordStrength, { generatePassword } from '../../components/ui/Password
 import GoogleSignInButton from '../../components/ui/GoogleSignInButton';
 import MicrosoftSignInButton from '../../components/ui/MicrosoftSignInButton';
 import { ShieldCheck, User, Mail, Lock, Eye, EyeOff, KeyRound, CheckCircle2, Shield, Inbox } from 'lucide-react';
+import { validateEmail } from '../../utils/validation';
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -35,7 +36,8 @@ export default function RegisterPage() {
 
   const validateStep1 = () => {
     if (!form.fullName.trim()) return 'Full name is required.';
-    if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Valid email address is required.';
+    const emailError = validateEmail(form.email);
+    if (emailError) return emailError;
     if (form.password.length < 8) return 'Password must be at least 8 characters.';
     if (form.password !== form.confirmPassword) return 'Passwords do not match.';
     if (!form.agreeTerms) return 'You must accept the Terms & Conditions.';
