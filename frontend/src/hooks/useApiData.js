@@ -12,12 +12,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * @param {Array} deps                  Re-fetch when these change.
  * @param {{ enabled?: boolean }} options
  */
+/**
+ * How long a request may run before we admit to the user that it is slow.
+ *
+ * The backend sleeps on its free tier and can take most of a minute to wake.
+ * Silent skeletons for that long read as a broken page, so callers can use
+ * `slow` to say what is actually happening.
+ */
+const SLOW_REQUEST_MS = 6000;
+
 export function useApiData(fetcher, deps = [], options = {}) {
   const { enabled = true } = options;
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState(null);
+  const [slow, setSlow] = useState(false);
 
   // Guards against setting state after unmount, and against a slow earlier
   // request overwriting the result of a faster later one.
@@ -35,6 +45,11 @@ export function useApiData(fetcher, deps = [], options = {}) {
     const id = ++requestId.current;
     setLoading(true);
     setError(null);
+    setSlow(false);
+
+    const slowTimer = setTimeout(() => {
+      if (mounted.current && id === requestId.current) setSlow(true);
+    }, SLOW_REQUEST_MS);
 
     try {
       const result = await fetcher();
@@ -46,8 +61,10 @@ export function useApiData(fetcher, deps = [], options = {}) {
         setError(err);
       }
     } finally {
+      clearTimeout(slowTimer);
       if (mounted.current && id === requestId.current) {
         setLoading(false);
+        setSlow(false);
       }
     }
     // `fetcher` is intentionally excluded: callers pass an inline arrow, which
@@ -58,7 +75,7 @@ export function useApiData(fetcher, deps = [], options = {}) {
 
   useEffect(() => { load(); }, [load]);
 
-  return { data, loading, error, refetch: load, isEmpty: !loading && !error && !data };
+  return { data, loading, error, slow, refetch: load, isEmpty: !loading && !error && !data };
 }
 
 /**

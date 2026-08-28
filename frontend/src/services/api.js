@@ -61,12 +61,28 @@ function messageFor(status, data) {
   }
 }
 
+/**
+ * How long to wait before giving up on a request.
+ *
+ * `fetch` has no timeout of its own, so a request that never settles leaves the
+ * caller loading forever — the Resources page sat on three grey skeletons with
+ * no way out, which reads as broken rather than slow. The backend runs on a
+ * free tier that sleeps after inactivity and can take the better part of a
+ * minute to wake, so this is deliberately generous: long enough for a cold
+ * start, short enough that a genuinely dead request becomes a real error a
+ * person can act on. Uploads get longer, since a large file legitimately takes
+ * more than a cold start does.
+ */
+const REQUEST_TIMEOUT_MS = 60000;
+const UPLOAD_TIMEOUT_MS = 180000;
+
 /* ── Core request wrapper ───────────────────────────────────────────── */
 async function request(endpoint, options = {}) {
+  const { timeoutMs = REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
   const url = `${BASE_URL}${endpoint}`;
   const config = {
-    headers: authHeaders(options.headers),
-    ...options,
+    headers: authHeaders(fetchOptions.headers),
+    ...fetchOptions,
   };
 
   // Remove Content-Type for FormData uploads
@@ -74,15 +90,33 @@ async function request(endpoint, options = {}) {
     delete config.headers['Content-Type'];
   }
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  config.signal = controller.signal;
+
   let response;
   try {
     response = await fetch(url, config);
-  } catch {
+  } catch (err) {
+    // An abort is a timeout, not a connection failure. Saying "check your
+    // connection" to someone whose connection is fine sends them to fix the
+    // wrong thing.
+    if (err?.name === 'AbortError') {
+      const timedOut = new Error(
+        'That took too long to respond. The server may be starting up — try again in a moment.',
+      );
+      timedOut.status = 0;
+      timedOut.timedOut = true;
+      throw timedOut;
+    }
+
     const offline = new Error(
       "Can't reach CyberSentinel right now. Check your connection and try again.",
     );
     offline.status = 0;
     throw offline;
+  } finally {
+    clearTimeout(timer);
   }
 
   // Handle empty responses (204, etc.)
@@ -130,6 +164,7 @@ export const api = {
   upload: (endpoint, formData) => request(endpoint, {
     method: 'POST',
     body: formData,
+    timeoutMs: UPLOAD_TIMEOUT_MS,
   }),
 };
 

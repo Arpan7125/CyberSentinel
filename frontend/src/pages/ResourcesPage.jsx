@@ -14,7 +14,7 @@ import { useApiData } from '../hooks/useApiData';
  * nothing has been.
  */
 export default function ResourcesPage() {
-  const { data, loading, error } = useApiData(() => saasService.getBlogPosts(), []);
+  const { data, loading, error, slow, refetch } = useApiData(() => saasService.getBlogPosts(), []);
   const posts = Array.isArray(data) ? data : data?.results || [];
 
   return (
@@ -44,11 +44,24 @@ export default function ResourcesPage() {
       <section className="page-section">
         <div className="pub-container">
           {loading && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 24 }}>
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="animate-pulse" style={{ height: 200, borderRadius: 12, background: 'var(--bg-tertiary)' }} />
-              ))}
-            </div>
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 24 }}>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="animate-pulse" style={{ height: 200, borderRadius: 12, background: 'var(--bg-tertiary)' }} />
+                ))}
+              </div>
+
+              {/* Bare skeletons for the length of a cold start look like a
+                  broken page. Say what is happening instead. */}
+              {slow && (
+                <p
+                  role="status"
+                  style={{ marginTop: 20, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}
+                >
+                  Still loading — the server may be waking up. This can take up to a minute.
+                </p>
+              )}
+            </>
           )}
 
           {!loading && (error || posts.length === 0) && (
@@ -56,8 +69,10 @@ export default function ResourcesPage() {
               className="glass-card"
               style={{ padding: 48, textAlign: 'center', maxWidth: 640, margin: '0 auto' }}
             >
+              {/* "Nothing published yet" over a failed request is a lie: we do
+                  not know what has been published, only that we could not ask. */}
               <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 12 }}>
-                Nothing published yet
+                {error ? "Couldn't load the resource library" : 'Nothing published yet'}
               </h2>
               <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 24 }}>
                 {error
@@ -65,6 +80,11 @@ export default function ResourcesPage() {
                   : 'When the team publishes research or guidance it appears here. In the meantime the API documentation covers how to build against the platform.'}
               </p>
               <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+                {error && (
+                  <button type="button" className="btn-pub btn-pub-primary btn-pub-sm" onClick={refetch}>
+                    Try again
+                  </button>
+                )}
                 <Link to="/docs" className="btn-pub btn-pub-primary btn-pub-sm" style={{ textDecoration: 'none' }}>
                   API documentation
                 </Link>
