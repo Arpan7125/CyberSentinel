@@ -1,34 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CyberSentinel">
   <title>CyberSentinel</title>
   <defs>
-    <linearGradient id="csBrand" x1="0" y1="0" x2="1" y2="0.35">
+    <linearGradient id="csBrand" x1="0" y1="0" x2="1" y2="0.4">
       <stop offset="0" stop-color="#4F46E5"/>
       <stop offset="1" stop-color="#7C3AED"/>
     </linearGradient>
   </defs>
 
   <!--
-    Negative space is transparent, never white. This mark sits on a white
-    navbar and on a #080a10 sidebar in this app; a white-filled interior
-    would read as a bright blob on the dark one. Transparent lets the
-    surface show through, so a single file serves both themes.
+    "Under inspection": two brackets holding one object.
 
-    Weights are deliberately heavier than the source render. The mark is
-    displayed at 28-44px in nine places here, and thin strokes that look
-    elegant at 1024px disappear entirely at 32px.
+    Deliberately not a shield with an eye. That mark is worn out — Norton,
+    McAfee, Avast, Bitdefender and most of the category share it — and a
+    security product whose own logo is a lookalike of a known brand is not a
+    good look. Brackets read as "examined" in every technical context, which
+    is also a truer description of this product: it does not block things, it
+    inspects them and shows the evidence.
+
+    Purely geometric on purpose. Straight edges and one convex centre shape
+    survive rasterisation at 16px, where the previous mark's eye collapsed
+    into a smudge.
+
+    Negative space is transparent, never white, so a single file works on the
+    white public navbar and the #080a10 dashboard sidebar alike.
   -->
   <g fill="url(#csBrand)">
-    <!-- Shield ring: outer silhouette with the interior knocked out. -->
-    <path fill-rule="evenodd" d="
-      M32 3.5 L58 12.5 V33 C58 46.5 46.8 56.6 32 61 C17.2 56.6 6 46.5 6 33 V12.5 Z
-      M32 12.2 L50 18.4 V33 C50 41.8 42.4 48.6 32 52.3 C21.6 48.6 14 41.8 14 33 V18.4 Z
-    "/>
-
-    <!-- Eye: solid lens with the iris knocked out, so it survives small sizes
-         as two clean shapes rather than three thin concentric rings. -->
-    <path fill-rule="evenodd" d="
-      M18.5 31.6 C24 22.6 40 22.6 45.5 31.6 C40 40.6 24 40.6 18.5 31.6 Z
-      M32 26.4 A5.2 5.2 0 1 0 32 36.8 A5.2 5.2 0 1 0 32 26.4 Z
-    "/>
+    <!-- Left bracket -->
+    <path d="M25 7 H11 C8.8 7 7 8.8 7 11 V53 C7 55.2 8.8 57 11 57 H25 V48.5 H16.5 V15.5 H25 Z"/>
+    <!-- Right bracket -->
+    <path d="M39 7 H53 C55.2 7 57 8.8 57 11 V53 C57 55.2 55.2 57 53 57 H39 V48.5 H47.5 V15.5 H39 Z"/>
+    <!-- The object under examination -->
+    <path d="M32 22 L41 32 L32 42 L23 32 Z"/>
   </g>
 </svg>
