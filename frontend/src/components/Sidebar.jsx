@@ -32,7 +32,7 @@ export default function Sidebar({ activeTab, setActiveTab, onSubscribe, onShowAd
         justifyContent: 'space-between'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <img src="/logo.png" alt="Logo" style={{ width: 28, height: 28 }} />
+          <img src="/logo.svg" alt="Logo" style={{ width: 28, height: 28 }} />
           <div>
             <div style={{ fontSize: 16, fontWeight: 900, letterSpacing: '-0.02em', color: 'var(--text-primary)' }}>CyberSentinel</div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>

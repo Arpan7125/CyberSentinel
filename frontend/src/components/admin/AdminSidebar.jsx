@@ -22,7 +22,7 @@ export default function AdminSidebar({ collapsed, setCollapsed }) {
           style={{ background: 'none', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 4 }}
           onClick={() => setCollapsed(!collapsed)}
         >
-          <img src="/logo.png" alt="CS Logo" />
+          <img src="/logo.svg" alt="CS Logo" />
         </button>
         <span>Admin SOC</span>
       </div>

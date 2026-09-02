@@ -32,7 +32,7 @@ export default function AuthLayout({ children, wide = false, actions = null }) {
 
         <div className="auth-brand-inner">
           <div className="auth-brand-logo">
-            <img src="/logo.png" alt="" width="34" height="34" />
+            <img src="/logo.svg" alt="" width="34" height="34" />
             <span>CyberSentinel</span>
           </div>
 

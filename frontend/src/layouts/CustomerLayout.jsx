@@ -85,7 +85,7 @@ export default function CustomerLayout() {
       {/* ── Collapsible Sidebar ── */}
       <aside className={`dash-sidebar ${collapsed ? 'collapsed' : ''}`} role="navigation">
         <div className="dash-sidebar-header">
-          <img src="/logo.png" alt="CyberSentinel logo" className="dash-sidebar-logo" />
+          <img src="/logo.svg" alt="CyberSentinel logo" className="dash-sidebar-logo" />
           <div className="dash-sidebar-brand">
             <span className="dash-sidebar-name">CyberSentinel</span>
             <span className="dash-sidebar-tag">Security Console</span>

@@ -49,7 +49,7 @@ export default function AdminLoginPage() {
         <div style={{ position: 'absolute', top: '-10%', left: '-10%', width: '50%', height: '50%', background: 'var(--accent-muted)', filter: 'blur(150px)', opacity: 0.5 }}></div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 'auto' }}>
-          <img src="/logo.png" alt="CyberSentinel" style={{ width: 40, height: 40, objectFit: 'contain' }} />
+          <img src="/logo.svg" alt="CyberSentinel" style={{ width: 40, height: 40, objectFit: 'contain' }} />
           <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.03em' }}>CyberSentinel</span>
         </div>
 

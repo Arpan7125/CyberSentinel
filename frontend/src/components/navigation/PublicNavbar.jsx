@@ -80,7 +80,7 @@ export default function PublicNavbar() {
         <div className="pub-navbar-inner">
           {/* Logo */}
           <Link to="/" className="pub-logo" aria-label="CyberSentinel home">
-            <img src="/logo.png" alt="" width="36" height="36" className="pub-logo-img" />
+            <img src="/logo.svg" alt="" width="36" height="36" className="pub-logo-img" />
             <div className="pub-logo-text">
               <span className="pub-logo-name">CyberSentinel</span>
               <span className="pub-logo-tag">Security Platform</span>

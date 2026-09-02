@@ -110,7 +110,7 @@ export default function TopNavbar({ activeTab, setActiveTab, onSubscribe, onShow
             onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
             onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
           >
-            <img src="/logo.png" alt="Logo" style={{ width: 40, height: 40 }} />
+            <img src="/logo.svg" alt="Logo" style={{ width: 40, height: 40 }} />
             <div>
               <div style={{ fontSize: 19, fontWeight: 900, letterSpacing: '-0.03em', color: 'var(--text-primary)' }}>CyberSentinel</div>
               <div style={{ fontSize: 10.5, color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 1 }}>

@@ -95,7 +95,7 @@ export default function DataConsentDialog({ onResolved }) {
         ref={dialogRef}
       >
         <div className="consent-head">
-          <img src="/logo.png" alt="" className="consent-logo" aria-hidden="true" />
+          <img src="/logo.svg" alt="" className="consent-logo" aria-hidden="true" />
           <h2 id="consent-title" className="consent-title">
             CyberSentinel wants to use your data
           </h2>

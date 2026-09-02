@@ -71,7 +71,7 @@ export default function Footer() {
           {/* Brand Column */}
           <div className="footer-brand">
             <Link to="/" className="footer-logo" aria-label="CyberSentinel home">
-              <img src="/logo.png" alt="" width="32" height="32" />
+              <img src="/logo.svg" alt="" width="32" height="32" />
               <span className="footer-logo-text">CyberSentinel</span>
             </Link>
             <p className="footer-brand-desc">
