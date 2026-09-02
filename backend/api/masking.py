@@ -17,6 +17,13 @@ through the reveal endpoint, which records who looked and at what.
 """
 
 
+#: The redaction glyph, as a named constant rather than an inline escape.
+#: A backslash inside an f-string expression is a SyntaxError before Python
+#: 3.12 (PEP 701), and the deployment target runs 3.11 — writing the escape
+#: directly inside the braces below took the whole build down.
+BULLET = '•'
+
+
 def mask_email(value):
     """`arpan.mukherjee@example.com` -> `arp•••@example.com`.
 
@@ -35,7 +42,7 @@ def mask_email(value):
     else:
         shown = local[:3]
 
-    return f"{shown}\u2022\u2022\u2022@{domain}"
+    return f"{shown}{BULLET * 3}@{domain}"
 
 
 def mask_phone(value):
@@ -51,11 +58,13 @@ def mask_phone(value):
 
     digits = [c for c in phone if c.isdigit()]
     if len(digits) <= 4:
-        return '\u2022' * len(digits)
+        return BULLET * len(digits)
 
     prefix = '+' if phone.startswith('+') else ''
     lead = digits[0] if prefix else ''
     tail = ''.join(digits[-4:])
     hidden = len(digits) - len(tail) - (1 if lead else 0)
 
-    return f"{prefix}{lead}{'\u2022' * max(hidden, 1)}{tail}"
+    bullets = BULLET * max(hidden, 1)
+
+    return f"{prefix}{lead}{bullets}{tail}"
