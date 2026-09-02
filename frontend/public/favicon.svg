@@ -1,26 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CyberSentinel">
   <title>CyberSentinel</title>
   <defs>
-    <linearGradient id="csFav" x1="0" y1="0" x2="1" y2="0.4">
+    <linearGradient id="csFav" x1="0" y1="0" x2="1" y2="0.35">
       <stop offset="0" stop-color="#4F46E5"/>
       <stop offset="1" stop-color="#7C3AED"/>
     </linearGradient>
   </defs>
 
   <!--
-    A separate drawing, not logo.svg scaled down.
+    The favicon is a separate drawing, not logo.svg scaled down.
+    At 16px a browser tab has ~16 device pixels to work with, so the eye
+    from the full mark collapses into a smudge. This version keeps the
+    silhouette and one bold interior shape, which is all that can survive.
 
-    A browser tab gets ~16 device pixels. The full mark's proportions leave the
-    bracket arms about one pixel thick there, which antialiasing turns to grey
-    mush. This version keeps the same idea and rebalances for the size: heavier
-    arms, a shorter gap, and a larger centre object, using more of the box.
+    A solid shield rather than a ring: at 16px a 2px ring around a 2px gap
+    is indistinguishable from a filled shape, so filling it deliberately
+    reads cleaner than a ring that muddies.
   -->
-  <g fill="url(#csFav)">
-    <!-- Left bracket, heavier arms -->
-    <path d="M25 4 H10 C6.7 4 4 6.7 4 10 V54 C4 57.3 6.7 60 10 60 H25 V49 H15 V15 H25 Z"/>
-    <!-- Right bracket -->
-    <path d="M39 4 H54 C57.3 4 60 6.7 60 10 V54 C60 57.3 57.3 60 54 60 H39 V49 H49 V15 H39 Z"/>
-    <!-- Larger centre object -->
-    <path d="M32 19 L43 32 L32 45 L21 32 Z"/>
-  </g>
+  <path fill="url(#csFav)" fill-rule="evenodd" d="
+    M32 3 L58.5 12.2 V33 C58.5 46.8 47 57.2 32 61.7 C17 57.2 5.5 46.8 5.5 33 V12.2 Z
+    M32 24.2 C25.4 24.2 20.2 27.4 17.6 31.8 C20.2 36.2 25.4 39.4 32 39.4
+      C38.6 39.4 43.8 36.2 46.4 31.8 C43.8 27.4 38.6 24.2 32 24.2 Z
+  "/>
+  <circle cx="32" cy="31.8" r="4.6" fill="url(#csFav)"/>
 </svg>
