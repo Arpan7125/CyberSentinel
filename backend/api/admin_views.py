@@ -207,12 +207,15 @@ class AdminIntegrationsView(APIView):
         conn_data = [{
             'id': c.id,
             'username': c.user.username,
-            'email': c.user.email,
+            # Both addresses masked: the account holder's, and the mailbox they
+            # connected. The connected mailbox is arguably the more sensitive of
+            # the two, since it names an inbox this platform can read.
+            'email': mask_email(c.user.email),
             'provider_name': c.provider.name,
             'category': c.provider.category,
             'status': c.status,
             'health_status': c.health_status,
-            'provider_account_email': c.provider_account_email,
+            'provider_account_email': mask_email(c.provider_account_email),
             'last_sync_at': c.last_sync_at.strftime('%Y-%m-%d %H:%M') if c.last_sync_at else None,
             'created_at': c.created_at.strftime('%Y-%m-%d %H:%M'),
         } for c in connections]
