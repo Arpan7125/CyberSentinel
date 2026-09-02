@@ -395,7 +395,7 @@ class SubscriptionPlan(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
-        return f"{self.name} (${self.price}/{self.interval})"
+        return f"{self.name} (₹{self.price}/{self.interval})"
 
 class UserSubscription(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='subscription')

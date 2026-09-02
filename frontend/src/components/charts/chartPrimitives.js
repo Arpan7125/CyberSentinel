@@ -177,18 +177,23 @@ export function severityColor(name) {
 
 export const compactNumber = (value) => {
   const n = Number(value) || 0;
-  return new Intl.NumberFormat('en-US', {
-    notation: Math.abs(n) >= 10000 ? 'compact' : 'standard',
-    maximumFractionDigits: Math.abs(n) >= 10000 ? 1 : Number.isInteger(n) ? 0 : 1,
+  const compact = Math.abs(n) >= 100000;
+  return new Intl.NumberFormat('en-IN', {
+    notation: compact ? 'compact' : 'standard',
+    maximumFractionDigits: compact ? 1 : Number.isInteger(n) ? 0 : 1,
   }).format(n);
 };
 
 export const compactCurrency = (value) => {
   const n = Number(value) || 0;
-  return new Intl.NumberFormat('en-US', {
+  // Compacts at a lakh rather than at ten thousand, because en-IN abbreviates
+  // on the Indian scale (T, L, Cr) and switching at 10,000 would render an
+  // axis of "10T" labels that mean nothing to the reader.
+  const compact = Math.abs(n) >= 100000;
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
-    currency: 'USD',
-    notation: Math.abs(n) >= 10000 ? 'compact' : 'standard',
-    maximumFractionDigits: Math.abs(n) >= 10000 ? 1 : 0,
+    currency: 'INR',
+    notation: compact ? 'compact' : 'standard',
+    maximumFractionDigits: compact ? 1 : 0,
   }).format(n);
 };

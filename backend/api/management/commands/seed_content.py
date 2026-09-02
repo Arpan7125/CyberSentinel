@@ -26,10 +26,13 @@ from django.db import transaction
 from api.models import (BlogPost, CaseStudy, FAQ, JobOpening, SubscriptionPlan,
                         TeamMember)
 
+# Prices are in Indian rupees, held as whole rupees rather than a converted
+# dollar amount: 999 and 3999 are the price points this market actually uses,
+# and a literal conversion of $12 would have read as an odd 1,004.
 PLANS = [
     {
         'name': 'Free',
-        'price': Decimal('0.00'),
+        'price': Decimal('0'),
         'interval': 'month',
         'features': [
             '25 scans per month',
@@ -40,7 +43,7 @@ PLANS = [
     },
     {
         'name': 'Pro',
-        'price': Decimal('12.00'),
+        'price': Decimal('999'),
         'interval': 'month',
         'features': [
             'Unlimited scans',
@@ -53,7 +56,7 @@ PLANS = [
     },
     {
         'name': 'Enterprise',
-        'price': Decimal('49.00'),
+        'price': Decimal('3999'),
         'interval': 'month',
         'features': [
             'Everything in Pro',

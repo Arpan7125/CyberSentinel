@@ -96,17 +96,29 @@ export function formatChange(changePct) {
   };
 }
 
-/** Currency display for the revenue dashboards. */
+/**
+ * Money, in rupees.
+ *
+ * `en-IN` matters beyond the symbol: it groups digits the Indian way
+ * (₹1,00,000 rather than ₹100,000), which is what a reader here expects to
+ * see. Every currency figure in the product goes through this one function so
+ * the format cannot drift between the pricing page and the revenue dashboards.
+ */
 export function formatCurrency(value, { compact = false } = {}) {
   const amount = Number(value) || 0;
-  return new Intl.NumberFormat('en-US', {
+  const isCompact = compact && Math.abs(amount) >= 100000;
+  return new Intl.NumberFormat('en-IN', {
     style: 'currency',
-    currency: 'USD',
-    notation: compact && Math.abs(amount) >= 10000 ? 'compact' : 'standard',
-    maximumFractionDigits: compact && Math.abs(amount) >= 10000 ? 1 : 2,
+    currency: 'INR',
+    notation: isCompact ? 'compact' : 'standard',
+    // Whole rupees read cleaner than trailing .00 on plan prices; fractions
+    // still show when an invoice actually has them.
+    minimumFractionDigits: 0,
+    maximumFractionDigits: isCompact ? 1 : (Number.isInteger(amount) ? 0 : 2),
   }).format(amount);
 }
 
 export function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(Number(value) || 0);
+  // Same locale as formatCurrency, so counts and money group identically.
+  return new Intl.NumberFormat('en-IN').format(Number(value) || 0);
 }

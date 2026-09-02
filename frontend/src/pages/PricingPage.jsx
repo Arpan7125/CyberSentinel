@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import SEOHead, { schemas } from '../utils/seo';
+import { formatCurrency } from '../hooks/useApiData';
 import Accordion from '../components/ui/Accordion';
 import { saasService } from '../services/api';
 
@@ -28,10 +29,8 @@ export default function PricingPage() {
       setLoading(false);
     }
   };
-  const formatPrice = (p) => {
-    if (p === null) return 'Custom';
-    return `$${p}`;
-  };
+  // Rupees, grouped the Indian way, via the one shared formatter.
+  const formatPrice = (p) => (p === null ? 'Custom' : formatCurrency(p));
 
   return (
     <>
@@ -82,7 +81,9 @@ export default function PricingPage() {
                   {tier.name === 'Professional' && <span className="pricing-badge">Most Popular</span>}
                   <h3 className="pricing-name">{tier.name}</h3>
                   <div className="pricing-price">{formatPrice(tier.price)}</div>
-                  <div className="pricing-period">/ month (billed annually)</div>
+                  <div className="pricing-period">
+                    {tier.price > 0 ? `per ${tier.interval || 'month'}` : 'free forever'}
+                  </div>
                   <p className="pricing-desc">Comprehensive protection for scaling organizations.</p>
                   
                   <ul className="pricing-features">

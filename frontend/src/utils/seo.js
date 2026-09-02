@@ -147,7 +147,7 @@ export const schemas = {
     })),
   }),
 
-  product: (name, description, price, currency = 'USD') => ({
+  product: (name, description, price, currency = 'INR') => ({
     '@context': 'https://schema.org',
     '@type': 'Product',
     name,
