@@ -4,6 +4,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAdminUser
 from django.core.mail import send_mail
 from django.conf import settings
+from .masking import mask_email
 from .models import Subscriber
 
 
@@ -121,7 +122,8 @@ class SubscriberListView(APIView):
         subscribers = Subscriber.objects.all().order_by('-created_at')
         data = [{
             'id': s.id,
-            'email': s.email,
+            # Masked on the way out; reveal is a deliberate, audited action.
+            'email': mask_email(s.email),
             'name': s.name,
             'is_active': s.is_active,
             'created_at': s.created_at.strftime('%Y-%m-%d %H:%M'),

@@ -71,7 +71,10 @@ class ReadinessView(APIView):
             try:
                 import easyocr  # noqa: F401
                 checks['ocr'] = 'local (EasyOCR)'
-            except ImportError:
+            except Exception:  # noqa: BLE001
+                # Same reasoning as ocr_processor: PyTorch can fail to import
+                # with OSError, not just ImportError. A readiness probe must
+                # report that, not raise 500 out of the health endpoint.
                 checks['ocr'] = 'not configured'
         checks['google_oauth'] = 'configured' if settings.GOOGLE_CLIENT_ID else 'not configured'
         checks['email'] = (

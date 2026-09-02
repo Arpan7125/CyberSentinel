@@ -16,7 +16,7 @@ from .auth_views import RegisterView, LoginView, LogoutView, ProfileView, Forgot
 from .subscription_views import SubscribeView, UnsubscribeView, SubscriberListView
 from .chat_views import ChatbotView
 from .intel_views import ThreatIntelFeedView
-from .admin_views import AdminStatsView, AdminUserActionView
+from .admin_views import AdminStatsView, AdminUserActionView, AdminRevealContactView
 from .integrations_views import GmailImportView, SmsDispatchView, UserIntegrationView, GmailReplyDraftView, PublicConfigView
 from .ticket_views import TicketViewSet
 from .notification_views import NotificationViewSet
@@ -117,6 +117,7 @@ urlpatterns = [
     # Admin
     path('admin/stats/', AdminStatsView.as_view(), name='admin-stats'),
     path('admin/users/action/', AdminUserActionView.as_view(), name='admin-user-action'),
+    path('admin/users/reveal/', AdminRevealContactView.as_view(), name='admin-user-reveal'),
     path('admin/integrations/', AdminIntegrationsView.as_view(), name='admin-integrations'),
 
     # Live analytics — every figure below is computed from real rows, replacing

@@ -261,8 +261,12 @@ class UserProfile(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='customer')
-    company = models.CharField(max_length=150, blank=True, default='')
-    phone = models.CharField(max_length=32, blank=True, default='')
+    # Encrypted at rest: these are the personal details a user hands over, and a
+    # database dump or leaked backup should not read as a contact list. Nothing
+    # queries or sorts by them, which is what makes encrypting them safe — see
+    # the note in fields.py about ciphertext being unfilterable.
+    company = EncryptedCharField(max_length=150, blank=True, default='')
+    phone = EncryptedCharField(max_length=32, blank=True, default='')
     mfa_enabled = models.BooleanField(default=False)
     mfa_secret = EncryptedCharField(max_length=32, blank=True, default='')
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)

@@ -216,7 +216,15 @@ export const adminService = {
   stats: () => api.get('/admin/stats/'),
   userAction: (data) => api.post('/admin/users/action/', data),
   subscribers: () => api.get('/admin/subscribers/'),
-  getUsers: () => api.get('/users/'),
+  // Contact details come back masked (see backend/api/masking.py). Search runs
+  // on the server precisely because of that: the client only ever holds the
+  // masked string, so filtering here could never match a full address.
+  getUsers: (search = '') =>
+    api.get(`/users/${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  // Returns one user's real email and phone, and writes an audit record naming
+  // the administrator who asked. Never call it to populate a list.
+  revealContact: (userId, reason = '') =>
+    api.post('/admin/users/reveal/', { user_id: userId, reason }),
   updateUser: (id, data) => api.patch(`/users/${id}/`, data),
   deleteUser: (id) => api.delete(`/users/${id}/`),
 };

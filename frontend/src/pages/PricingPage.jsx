@@ -18,7 +18,7 @@ export default function PricingPage() {
       setLoading(true);
       const [plansRes, faqsRes] = await Promise.all([
         saasService.getPlans(),
-        saasService.getFAQs('?category=Pricing')
+        saasService.getFaqs('?category=Pricing')
       ]);
       setPlans(Array.isArray(plansRes?.results) ? plansRes.results : (Array.isArray(plansRes) ? plansRes : []));
       setFaqs(Array.isArray(faqsRes?.results) ? faqsRes.results : (Array.isArray(faqsRes) ? faqsRes : []));

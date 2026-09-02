@@ -16,11 +16,20 @@ _EASYOCR_LOADED = False
 try:
     import easyocr
     _EASYOCR_LOADED = True
-except ImportError:
+except Exception as exc:  # noqa: BLE001 - see below
+    # Deliberately broader than ImportError. EasyOCR pulls in PyTorch, which
+    # fails at import time for reasons that are not missing-package errors: a
+    # partial install, a CPU without the required instructions, or an OS policy
+    # blocking the native .dll all raise OSError instead. Catching only
+    # ImportError meant any of those took the entire backend down at startup —
+    # every endpoint, not just the screenshot scanner. An optional dependency
+    # must never be able to do that; the whole point of this module is to
+    # degrade to the cloud backend, or to an honest "unavailable".
     logger.warning(
-        "EasyOCR is not installed — the screenshot scanner will use the cloud OCR "
-        "backend if OCR_SPACE_API_KEY is set, otherwise report OCR as unavailable "
-        "instead of fabricating extracted text."
+        "EasyOCR is unavailable (%s: %s) — the screenshot scanner will use the "
+        "cloud OCR backend if OCR_SPACE_API_KEY is set, otherwise report OCR as "
+        "unavailable instead of fabricating extracted text.",
+        type(exc).__name__, exc,
     )
 
 # ── Cloud engine (OCR.space) ─────────────────────────────────────────────────

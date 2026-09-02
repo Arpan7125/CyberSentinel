@@ -3,7 +3,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Count
-from .models import ScanLog, Subscriber
+from .models import AuditLog, ScanLog, Subscriber
+from .masking import mask_email
 from .permissions import IsAdmin
 
 
@@ -26,6 +27,8 @@ class AdminStatsView(APIView):
         ))
         for u in recent_users:
             u['date_joined'] = u['date_joined'].strftime('%Y-%m-%d %H:%M')
+            # Masked before it leaves the server — see masking.py.
+            u['email'] = mask_email(u['email'])
         
         # Recent scan logs
         recent_scans = list(ScanLog.objects.all()[:20].values(
@@ -40,6 +43,7 @@ class AdminStatsView(APIView):
         ))
         for sub in subscribers:
             sub['created_at'] = sub['created_at'].strftime('%Y-%m-%d %H:%M')
+            sub['email'] = mask_email(sub['email'])
         
         return Response({
             'stats': {
@@ -52,6 +56,55 @@ class AdminStatsView(APIView):
             'recent_users': recent_users,
             'recent_scans': recent_scans,
             'subscribers': subscribers,
+        }, status=status.HTTP_200_OK)
+
+
+class AdminRevealContactView(APIView):
+    """Hand an administrator the real contact details for one person, on the record.
+
+    Masking the admin console (see masking.py) only means something if the way
+    around it is deliberate and attributable. This endpoint is that way around:
+    it returns exactly one user's details, and it writes an AuditLog row naming
+    the administrator who asked, before returning anything.
+
+    The audit write is not best-effort. If it fails the reveal fails, because an
+    unlogged lookup is precisely the thing this is meant to prevent.
+    """
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        user_id = request.data.get('user_id')
+        reason = (request.data.get('reason') or '').strip()
+
+        if not user_id:
+            return Response({'error': 'user_id is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            target = User.objects.select_related('profile').get(pk=user_id)
+        except (User.DoesNotExist, ValueError, TypeError):
+            return Response({'error': 'No such user.'}, status=status.HTTP_404_NOT_FOUND)
+
+        profile = getattr(target, 'profile', None)
+        phone = getattr(profile, 'phone', '') if profile else ''
+
+        AuditLog.objects.create(
+            user=request.user,
+            action='pii.reveal',
+            details=(
+                f"{request.user.username} revealed contact details for "
+                f"{target.username} (id={target.pk})."
+                + (f" Reason given: {reason}" if reason else " No reason given.")
+            ),
+        )
+
+        return Response({
+            'user_id': target.pk,
+            'username': target.username,
+            'email': target.email,
+            'phone': phone,
+            'logged': True,
         }, status=status.HTTP_200_OK)
 
 
@@ -77,19 +130,49 @@ class AdminUserActionView(APIView):
         if target_user.is_superuser:
             return Response({'error': 'Cannot modify superuser.'}, status=status.HTTP_403_FORBIDDEN)
         
+        # Every branch below records what happened before returning. These are
+        # the three most consequential things an administrator can do to another
+        # account — suspend it, hand it admin rights, or destroy it — and until
+        # now none of them left a trace, so granting staff access was an
+        # unattributable privilege escalation. The AuditLog model already
+        # existed; nothing was writing to it.
         if action == 'toggle_active':
             target_user.is_active = not target_user.is_active
             target_user.save()
-            return Response({'message': f"User {'activated' if target_user.is_active else 'deactivated'} successfully."})
+            state = 'activated' if target_user.is_active else 'deactivated'
+            AuditLog.objects.create(
+                user=admin_user,
+                action='user.toggle_active',
+                details=(f"{admin_user.username} {state} {target_user.username} "
+                         f"(id={target_user.pk})."),
+            )
+            return Response({'message': f"User {state} successfully."})
         
         elif action == 'toggle_staff':
             target_user.is_staff = not target_user.is_staff
             target_user.save()
-            return Response({'message': f"User {'granted' if target_user.is_staff else 'revoked'} admin access."})
+            state = 'granted' if target_user.is_staff else 'revoked'
+            AuditLog.objects.create(
+                user=admin_user,
+                action='user.toggle_staff',
+                details=(f"{admin_user.username} {state} admin access "
+                         f"{'to' if target_user.is_staff else 'from'} "
+                         f"{target_user.username} (id={target_user.pk})."),
+            )
+            return Response({'message': f"User {state} admin access."})
         
         elif action == 'delete':
             if target_user.id == admin_user.id:
                 return Response({'error': 'Cannot delete yourself.'}, status=status.HTTP_400_BAD_REQUEST)
+            # Recorded before the delete: the row's own id and username are gone
+            # afterwards, and AuditLog.user is SET_NULL so the record survives
+            # even if the administrator is later removed too.
+            AuditLog.objects.create(
+                user=admin_user,
+                action='user.delete',
+                details=(f"{admin_user.username} deleted account {target_user.username} "
+                         f"(id={target_user.pk}, email={target_user.email})."),
+            )
             target_user.delete()
             return Response({'message': 'User deleted successfully.'})
         

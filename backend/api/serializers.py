@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from .masking import mask_email, mask_phone
 from .models import (
     ScanLog, QuizQuestion, UserProfile, SupportTicket,
     TicketReply, Notification, LoginHistory, DeviceSession, AuditLog,
@@ -8,12 +9,34 @@ from .models import (
 )
 
 class UserSerializer(serializers.ModelSerializer):
+    """The admin user list.
+
+    Contact details are masked here rather than in the React table, because a
+    value the server has already sent is not hidden — it is only not painted.
+    An admin who needs the real address asks for it through
+    AdminRevealContactView, which writes an audit record naming them.
+
+    Server-side `?search=` on UserViewSet still matches the full address, so
+    masking does not cost admins the ability to find a user they can already
+    name.
+    """
+
     role = serializers.CharField(source='profile.role', read_only=True)
     company = serializers.CharField(source='profile.company', read_only=True)
-    
+    email = serializers.SerializerMethodField()
+    phone = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'company']
+        fields = ['id', 'username', 'email', 'phone', 'first_name', 'last_name',
+                  'role', 'company']
+
+    def get_email(self, obj):
+        return mask_email(obj.email)
+
+    def get_phone(self, obj):
+        profile = getattr(obj, 'profile', None)
+        return mask_phone(getattr(profile, 'phone', '') if profile else '')
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """`role` drives the IsAdmin / IsEnterprise permission classes, so it can

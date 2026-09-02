@@ -19,7 +19,7 @@ export default function FAQPage() {
     try {
       setLoading(true);
       const query = activeCategory !== 'All' ? `?category=${encodeURIComponent(activeCategory)}` : '';
-      const response = await saasService.getFAQs(query);
+      const response = await saasService.getFaqs(query);
       setFaqs(Array.isArray(response?.results) ? response.results : (Array.isArray(response) ? response : []));
     } catch (err) {
       setError('Failed to load FAQs. Please try again later.');
@@ -35,7 +35,11 @@ export default function FAQPage() {
         description="Find answers to common questions about CyberSentinel platforms, EDR products, pricing subscriptions, compliance, and SOC supports."
         path="/faq"
         structuredData={schemas.faqPage(
-          faqItems.map(f => ({ question: f.question, answer: f.answer }))
+          // `faqItems` never existed — this threw a ReferenceError and took the
+          // whole page down with it. It went unnoticed because the fetch above
+          // called a service method that also did not exist, so the component
+          // never rendered far enough to reach this line.
+          faqs.map(f => ({ question: f.question, answer: f.answer }))
         )}
       />
 

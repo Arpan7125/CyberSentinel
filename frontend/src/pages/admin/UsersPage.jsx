@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { adminService, authService } from '../../services/api';
-import { Search, KeyRound, X } from 'lucide-react';
+import { Search, KeyRound, X, Eye } from 'lucide-react';
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
@@ -10,13 +10,21 @@ export default function UsersPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ first_name: '', last_name: '', role: '', is_active: true });
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  // Contact details arrive masked. This holds the ones an admin has explicitly
+  // asked to see, keyed by user id — never persisted, gone on reload.
+  const [revealed, setRevealed] = useState({});
+  const [revealing, setRevealing] = useState(null);
 
-  const fetchUsers = async () => {
+  // Search runs server-side. It has to: the browser only ever receives the
+  // masked address, so filtering locally could not match a full one.
+  useEffect(() => {
+    const t = setTimeout(() => fetchUsers(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const fetchUsers = async (query = '') => {
     try {
-      const res = await adminService.getUsers();
+      const res = await adminService.getUsers(query);
       setUsers(Array.isArray(res?.results) ? res.results : (Array.isArray(res) ? res : []));
     } catch (err) {
       console.error("Failed to fetch users:", err);
@@ -26,6 +34,25 @@ export default function UsersPage() {
   };
 
   const handleSearch = (e) => setSearch(e.target.value);
+
+  /**
+   * Ask the server for one user's real contact details.
+   *
+   * This writes an audit record naming the administrator, so it is offered per
+   * row and never called to fill the table.
+   */
+  const handleReveal = async (u) => {
+    setRevealing(u.id);
+    try {
+      const res = await adminService.revealContact(u.id, 'Viewed in user directory');
+      setRevealed(prev => ({ ...prev, [u.id]: { email: res.email, phone: res.phone } }));
+    } catch (err) {
+      console.error('Failed to reveal contact details:', err);
+      alert(err.message || 'Could not reveal those details.');
+    } finally {
+      setRevealing(null);
+    }
+  };
 
   const handleEditClick = (u) => {
     setSelectedUser(u);
@@ -83,14 +110,23 @@ export default function UsersPage() {
    * The admin never sees or sets the password — the code goes to the account's
    * own address, which is what keeps this from being an account-takeover tool.
    */
-  const handleResetPassword = async (email) => {
-    if (!email) {
-      alert('This account has no email address on file, so a reset cannot be sent.');
-      return;
-    }
-    if (!window.confirm(`Email a password reset code to ${email}?`)) return;
+  const handleResetPassword = async (u) => {
+    if (!window.confirm(`Email a password reset code to ${u.username}?`)) return;
 
     try {
+      // The table only holds the masked address, and mailing a reset to
+      // "arp•••@example.com" would silently go nowhere. Resolve the real
+      // one through the audited reveal endpoint, so sending a reset is recorded
+      // the same way reading the address is.
+      const known = revealed[u.id];
+      const email = known?.email
+        || (await adminService.revealContact(u.id, 'Sending password reset')).email;
+
+      if (!email) {
+        alert('This account has no email address on file, so a reset cannot be sent.');
+        return;
+      }
+
       await authService.forgotPassword(email);
       alert(`A reset code has been emailed to ${email}.`);
     } catch (err) {
@@ -98,17 +134,18 @@ export default function UsersPage() {
     }
   };
 
-  const filteredUsers = users.filter(u =>
-    (u.first_name + ' ' + u.last_name).toLowerCase().includes(search.toLowerCase()) ||
-    u.username.toLowerCase().includes(search.toLowerCase()) ||
-    u.email.toLowerCase().includes(search.toLowerCase())
-  );
+  // The server already applied `search`; re-filtering here would only discard
+  // rows it matched on a full email address the browser cannot see.
+  const filteredUsers = users;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       <div>
         <h1 className="page-title">User Directory</h1>
-        <p className="page-subtitle">Inspect enrolled portal user accounts, roles, access permissions, and activity ratings</p>
+        <p className="page-subtitle">
+          Inspect enrolled portal user accounts, roles, and access permissions. Contact details are
+          masked; revealing one is recorded in the audit log against your account.
+        </p>
       </div>
 
       {/* Directory Filters Search */}
@@ -117,7 +154,7 @@ export default function UsersPage() {
         <input
           type="text"
           className="form-input-pub"
-          placeholder="Search users by name or email address..."
+          placeholder="Search by name, username, or full email address..."
           value={search}
           onChange={handleSearch}
           style={{ flex: 1, border: 'none', background: 'transparent', padding: 0 }}
@@ -153,7 +190,32 @@ export default function UsersPage() {
                     <tr key={u.id}>
                       <td style={{ fontWeight: 650 }}>{u.first_name} {u.last_name}</td>
                       <td>{u.username}</td>
-                      <td style={{ fontFamily: 'var(--font-mono)' }}>{u.email}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>
+                        {revealed[u.id] ? (
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span>{revealed[u.id].email}</span>
+                            {revealed[u.id].phone && (
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                {revealed[u.id].phone}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            {u.email}
+                            <button
+                              type="button"
+                              className="btn-pub btn-pub-ghost btn-pub-sm"
+                              onClick={() => handleReveal(u)}
+                              disabled={revealing === u.id}
+                              title="Show the real contact details. This is recorded in the audit log."
+                              style={{ padding: '2px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Eye size={13} /> {revealing === u.id ? '…' : 'Reveal'}
+                            </button>
+                          </span>
+                        )}
+                      </td>
                       <td>
                         <span className={`badge ${u.role === 'admin' ? 'badge-critical' : u.role === 'enterprise' ? 'badge-admin' : 'badge-low'}`} style={{ padding: '3px 8px' }}>
                           {u.role || 'customer'}
@@ -176,7 +238,7 @@ export default function UsersPage() {
                           >
                             {u.is_active !== false ? 'Suspend' : 'Activate'}
                           </button>
-                          <button className="btn-pub btn-pub-ghost btn-pub-sm" onClick={() => handleResetPassword(u.email)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <button className="btn-pub btn-pub-ghost btn-pub-sm" onClick={() => handleResetPassword(u)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <KeyRound size={14} /> Reset pwd
                           </button>
                           <button className="btn-pub btn-pub-ghost btn-pub-sm" style={{ color: 'var(--accent-red)' }} onClick={() => handleDelete(u.id)}>
