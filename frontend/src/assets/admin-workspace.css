@@ -334,6 +334,12 @@
   line-height: 1.6;
   font-size: 15px;
   color: var(--text-primary);
+  /* Reporters write in paragraphs and paste message text with line breaks.
+     Collapsing that into one run destroys the structure of the very thing an
+     admin is here to read. `pre-wrap` keeps the breaks and still wraps long
+     lines; `break-word` stops a pasted URL widening the pane. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 .admin-ws-message-details-box {
   background: var(--bg-tertiary);

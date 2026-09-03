@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdminWorkspace } from '../../contexts/AdminWorkspaceContext';
 import { useAuth } from '../../AuthContext';
+import { api } from '../../services/api';
 import { 
   Users, Bot, ScrollText, Edit, Settings, LogOut, 
   ShieldAlert, LayoutDashboard, FileText, Shield, BarChart3, Bell, Activity, CreditCard as CardIcon, Inbox, Key
@@ -9,6 +10,25 @@ import {
 export default function AdminSidebar({ collapsed, setCollapsed }) {
   const { activeModule, setActiveModule } = useAdminWorkspace();
   const { logout } = useAuth();
+
+  // The Support badge was the literal "4". It said four tickets were waiting
+  // on a deployment with none at all — a fabricated number in the one console
+  // where an admin has to trust what they are shown. It counts real open
+  // tickets now, and renders nothing when there are none, because a zero badge
+  // is noise.
+  const [openTickets, setOpenTickets] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/tickets/')
+      .then((res) => {
+        if (cancelled) return;
+        const rows = Array.isArray(res?.results) ? res.results : (Array.isArray(res) ? res : []);
+        setOpenTickets(rows.filter((t) => String(t.status).toLowerCase() === 'open').length);
+      })
+      .catch(() => { /* Leave the badge off rather than guess at a number. */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleLogout = async () => {
     await logout();
@@ -58,7 +78,9 @@ export default function AdminSidebar({ collapsed, setCollapsed }) {
           </button>
           <button className={`admin-ws-link ${activeModule === 'support' ? 'active' : ''}`} onClick={() => setActiveModule('support')}>
             <span><Inbox size={16} /></span> <span>Support</span>
-            <span className="admin-ws-link-badge">4</span>
+            {openTickets > 0 && (
+              <span className="admin-ws-link-badge">{openTickets}</span>
+            )}
           </button>
           <button className={`admin-ws-link ${activeModule === 'ai-chats' ? 'active' : ''}`} onClick={() => setActiveModule('ai-chats')}>
             <span><Bot size={16} /></span> <span>AI Conversations</span>
